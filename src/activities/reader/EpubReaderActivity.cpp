@@ -92,11 +92,13 @@ constexpr uint8_t PRE_POINT_SIZE_READER_SETTINGS_FILE_VERSION = 5;
 constexpr uint8_t PRE_DICTIONARY_FONT_SIZE_READER_SETTINGS_FILE_VERSION = 6;
 constexpr uint8_t PRE_SPLIT_SCREEN_MARGIN_READER_SETTINGS_FILE_VERSION = 7;
 constexpr uint8_t PRE_GLOBAL_DARK_MODE_READER_SETTINGS_FILE_VERSION = 8;
-constexpr uint8_t READER_SETTINGS_FILE_VERSION = 9;
+constexpr uint8_t PRE_SPEED_READER_READER_SETTINGS_FILE_VERSION = 9;
+constexpr uint8_t READER_SETTINGS_FILE_VERSION = 10;
 constexpr uint8_t READER_SETTINGS_FLAG_CUSTOM = 1 << 0;
 constexpr uint8_t READER_SETTINGS_FLAG_AUTO_PAGE_TURN = 1 << 1;
 constexpr uint8_t READER_SETTINGS_FLAG_RENDER_MODE = 1 << 2;
 constexpr uint8_t READER_SETTINGS_FLAG_DICTIONARY_FONT = 1 << 3;
+constexpr uint8_t READER_SETTINGS_FLAG_SPEED_READER = 1 << 4;
 constexpr char READER_SETTINGS_FILE_NAME[] = "/reader_settings.bin";
 constexpr char BALANCED_SECTION_CACHE_SUFFIX[] = "_balanced";
 constexpr char LIGHT_SECTION_CACHE_SUFFIX[] = "_light";
@@ -1238,7 +1240,8 @@ BookReaderSettingsData loadBookReaderSettingsFile(const std::string& cachePath) 
       version != PRE_POINT_SIZE_READER_SETTINGS_FILE_VERSION &&
       version != PRE_DICTIONARY_FONT_SIZE_READER_SETTINGS_FILE_VERSION &&
       version != PRE_SPLIT_SCREEN_MARGIN_READER_SETTINGS_FILE_VERSION &&
-      version != PRE_GLOBAL_DARK_MODE_READER_SETTINGS_FILE_VERSION && version != READER_SETTINGS_FILE_VERSION) {
+      version != PRE_GLOBAL_DARK_MODE_READER_SETTINGS_FILE_VERSION &&
+      version != PRE_SPEED_READER_READER_SETTINGS_FILE_VERSION && version != READER_SETTINGS_FILE_VERSION) {
     file.close();
     LOG_DBG("ERS", "Reader settings version mismatch, using defaults");
     return data;
@@ -1267,6 +1270,12 @@ BookReaderSettingsData loadBookReaderSettingsFile(const std::string& cachePath) 
   if (ok && version >= PRE_SPLIT_SCREEN_MARGIN_READER_SETTINGS_FILE_VERSION) {
     ok = readU8(file, data.dictionaryFontPointSize);
   }
+  uint8_t speedReaderEnabled = 0;
+  SpeedReaderSettings speedReader;
+  if (ok && version >= READER_SETTINGS_FILE_VERSION) {
+    ok = readU8(file, speedReaderEnabled) && readU8(file, speedReader.wordsPerGroup) &&
+         readU16(file, speedReader.intervalTenths);
+  }
   file.close();
   if (!ok) {
     LOG_ERR("ERS", "Reader settings file is truncated, using defaults");
@@ -1288,6 +1297,12 @@ BookReaderSettingsData loadBookReaderSettingsFile(const std::string& cachePath) 
   if (flags & READER_SETTINGS_FLAG_DICTIONARY_FONT) {
     data.dictionarySdFontFamilyName[sizeof(data.dictionarySdFontFamilyName) - 1] = '\0';
     data.hasDictionaryFontOverride = data.dictionarySdFontFamilyName[0] != '\0';
+  }
+  if (flags & READER_SETTINGS_FLAG_SPEED_READER) {
+    data.hasSpeedReaderSettings = true;
+    speedReader.enabled = speedReaderEnabled != 0;
+    speedReader.normalize();
+    data.speedReader = speedReader;
   }
   if (!data.hasDictionaryFontOverride) {
     std::strncpy(data.dictionarySdFontFamilyName, SETTINGS.dictionarySdFontFamilyName,
@@ -1312,14 +1327,18 @@ bool saveBookReaderSettingsFile(const std::string& cachePath, const BookReaderSe
   if (data.hasDictionaryFontOverride && data.dictionarySdFontFamilyName[0] != '\0') {
     flags |= READER_SETTINGS_FLAG_DICTIONARY_FONT;
   }
+  if (data.hasSpeedReaderSettings) flags |= READER_SETTINGS_FLAG_SPEED_READER;
   const uint16_t clampedSeconds = clampAutoPageTurnIntervalSeconds(data.autoPageTurnSeconds);
   EpubReaderActivity::ReaderSettingsSnapshot normalizedReaderSettings = data.readerSettings;
   normalizedReaderSettings.epubRenderMode = normalizeRenderModeRaw(data.renderMode);
+  SpeedReaderSettings speedReader = data.speedReader;
+  speedReader.normalize();
   const bool ok = writeU8(file, READER_SETTINGS_FILE_VERSION) && writeU8(file, flags) &&
                   writeU16(file, clampedSeconds) && writeU8(file, normalizeRenderModeRaw(data.renderMode)) &&
                   writeReaderSettingsSnapshot(file, normalizedReaderSettings) &&
                   writeExact(file, data.dictionarySdFontFamilyName, sizeof(data.dictionarySdFontFamilyName)) &&
-                  writeU8(file, data.dictionaryFontPointSize);
+                  writeU8(file, data.dictionaryFontPointSize) && writeU8(file, speedReader.enabled ? 1 : 0) &&
+                  writeU8(file, speedReader.wordsPerGroup) && writeU16(file, speedReader.intervalTenths);
   file.close();
   if (!ok) {
     LOG_ERR("ERS", "Short write saving reader settings");

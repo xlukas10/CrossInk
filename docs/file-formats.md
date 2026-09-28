@@ -136,10 +136,11 @@ if (parsedSize != fileSize) {
 
 ## `reader_settings.bin`
 
-### Version 9
+### Version 10
 
 Each EPUB cache directory may contain `reader_settings.bin`. Missing files mean
-the book uses global Reader settings and the default auto-page-turn interval.
+the book uses global Reader settings, the default auto-page-turn interval, and
+the default speed reader settings.
 
 Version 1 stored only:
 
@@ -153,7 +154,11 @@ dictionary SD-font family name. Version 6 stores reader font sizes as physical
 point sizes, version 7 appends the dictionary font's selected point size, and
 version 8 splits the screen margin into vertical and horizontal values. Version
 9 removes the obsolete per-book Dark Mode byte: Dark Mode is now a global
-display setting.
+display setting. Version 10 appends the per-book speed reader state (on/off,
+words per group, and display interval). Speed reader values are meaningful only
+when flag bit 4 is set; otherwise the book uses the defaults (off, 1 word,
+0.3 s). Firmware that only knows version 9 ignores a version 10 file and falls
+back to global settings for that book.
 This lets the
 file preserve an auto-page-turn interval without forcing custom font/layout
 settings for the book. It also stores a per-book EPUB render mode override,
@@ -165,8 +170,8 @@ fallback successfully opens a difficult book.
 
 ```c++
 struct ReaderSettingsBin {
-    u8 version; // 9
-    u8 flags;   // bit 0 = custom reader settings, bit 1 = custom auto-page-turn interval, bit 2 = render mode override, bit 3 = dictionary font override
+    u8 version; // 10
+    u8 flags;   // bit 0 = custom reader settings, bit 1 = custom auto-page-turn interval, bit 2 = render mode override, bit 3 = dictionary font override, bit 4 = speed reader settings
     u16 autoPageTurnSeconds;
     u8 renderMode; // 0 = CrossInk Default, 1 = Balanced, 2 = Light
 
@@ -192,6 +197,30 @@ struct ReaderSettingsBin {
     char sdFontFamilyName[64];
     char dictionarySdFontFamilyName[64]; // meaningful only when flag bit 3 is set
     u8 dictionaryFontPointSize; // 0 = follow reader size
+    u8 speedReaderEnabled;      // version 10+; meaningful only when flag bit 4 is set
+    u8 speedReaderWordsPerGroup; // 1-10
+    u16 speedReaderIntervalTenths; // 1-100, tenths of a second each word group is shown
+};
+```
+
+## TXT `reader_settings.bin`
+
+### Version 1
+
+TXT and Markdown cache directories (`txt_<hash>`) may contain their own, much
+smaller `reader_settings.bin` with per-book state. TXT books have no per-book
+font or layout overrides, so the file currently holds only the speed reader
+state. A missing file, an unknown version, or a truncated file means the book
+uses the speed reader defaults (off, 1 word, 0.3 s). The file is kept when the
+book cache is deleted or the book is re-uploaded.
+
+```c++
+struct TxtReaderSettingsBin {
+    u8 version; // 1
+    u8 flags;   // bit 0 = speed reader settings
+    u8 speedReaderEnabled;
+    u8 speedReaderWordsPerGroup;   // 1-10
+    u16 speedReaderIntervalTenths; // 1-100, tenths of a second
 };
 ```
 

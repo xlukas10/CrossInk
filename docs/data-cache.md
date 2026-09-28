@@ -34,7 +34,7 @@ The main data directory is `.crosspoint` on the SD card. It stores render caches
 │   ├── progress.bin        # Reading position (chapter, page, etc.)
 │   ├── stats.bin           # Legacy per-book reading stats
 │   ├── stats_v5.bin        # Version 5 per-book reading stats
-│   ├── reader_settings.bin # Per-book reader settings, render mode, and auto-page-turn interval
+│   ├── reader_settings.bin # Per-book reader settings, render mode, auto-page-turn interval, and speed reader state
 │   ├── cover.bmp           # Book cover image, once generated
 │   ├── cover_absolute.bmp  # Four-tone image-mode cover (generated separately)
 │   ├── cover_crop_absolute.bmp # Cropped four-tone image-mode cover
@@ -46,7 +46,7 @@ The main data directory is `.crosspoint` on the SD card. It stores render caches
 │       ├── 1.bin
 │       └── ...
 ├── xtc_12471232/           # XTC progress and generated cover/thumb images
-└── txt_12471232/           # TXT progress, page index, and generated cover image
+└── txt_12471232/           # TXT progress, page index, stats, speed reader state (reader_settings.bin), and cover
 ```
 
 Four-tone sleep covers use separate `_absolute.bmp` files so older cover shading is not reused. These are generated on demand for supported displays; TXT/Markdown JPG covers also use a separate `cover_absolute.bmp`. Existing cover and thumbnail caches remain available, and no manual cache reset is needed.

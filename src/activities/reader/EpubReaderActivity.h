@@ -19,6 +19,7 @@
 #include "GlobalReadingStats.h"
 #include "ManualPageTurnQueue.h"
 #include "ReaderProgressSaveDebouncer.h"
+#include "SpeedReaderSettings.h"
 #include "activities/Activity.h"
 #include "components/OptionPopup.h"
 #if CROSSINK_APP_CAP_TOUCH
@@ -72,6 +73,9 @@ class EpubReaderActivity final : public Activity {
     char dictionarySdFontFamilyName[64] = "";
     // Zero follows the reader's current physical point size.
     uint8_t dictionaryFontPointSize = 0;
+    // Set once the book has its own speed reader values; otherwise speedReader holds the defaults.
+    bool hasSpeedReaderSettings = false;
+    SpeedReaderSettings speedReader;
     ReaderSettingsSnapshot readerSettings;
   };
 
@@ -86,6 +90,8 @@ class EpubReaderActivity final : public Activity {
     bool hasCustomReaderSettings = false;
     bool hasRenderModeOverride = false;
     uint8_t renderMode = 0;
+    bool hasSpeedReaderSettings = false;
+    SpeedReaderSettings speedReader;
     ReaderSettingsSnapshot readerSettings;
 
     ActiveBookReaderSettingsData() = default;
@@ -95,6 +101,8 @@ class EpubReaderActivity final : public Activity {
           hasCustomReaderSettings(source.hasCustomReaderSettings),
           hasRenderModeOverride(source.hasRenderModeOverride),
           renderMode(source.renderMode),
+          hasSpeedReaderSettings(source.hasSpeedReaderSettings),
+          speedReader(source.speedReader),
           readerSettings(source.readerSettings) {}
   };
 

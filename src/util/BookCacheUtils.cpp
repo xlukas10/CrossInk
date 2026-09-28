@@ -29,6 +29,11 @@ constexpr PreservedCacheFile PAGE_PROGRESS_FILES[] = {
     {"progress.bin", "upload_preserve_progress.bin"},
 };
 
+constexpr PreservedCacheFile TXT_USER_STATE_FILES[] = {
+    {"progress.bin", "upload_preserve_progress.bin"},
+    {"reader_settings.bin", "upload_preserve_reader_settings.bin"},
+};
+
 constexpr PreservedCacheFile CACHE_CLEAR_USER_STATE_FILES[] = {
     {"dictionary_history.txt", "clear_preserve_dictionary_history.txt"},
 };
@@ -43,9 +48,8 @@ struct StatsFileCandidate {
   int version = -1;
 };
 
-constexpr size_t MAX_PRESERVED_CACHE_FILES = std::size(EPUB_USER_STATE_FILES) > std::size(PAGE_PROGRESS_FILES)
-                                                 ? std::size(EPUB_USER_STATE_FILES)
-                                                 : std::size(PAGE_PROGRESS_FILES);
+constexpr size_t MAX_PRESERVED_CACHE_FILES =
+    std::max({std::size(EPUB_USER_STATE_FILES), std::size(PAGE_PROGRESS_FILES), std::size(TXT_USER_STATE_FILES)});
 constexpr size_t MAX_STATS_FILES_TO_PRESERVE = 8;
 constexpr char STATS_PREFIX[] = "stats";
 constexpr char STATS_SUFFIX[] = ".bin";
@@ -73,9 +77,13 @@ const PreservedCacheFile* preservedFilesForPath(const std::string& path, size_t&
     count = std::size(EPUB_USER_STATE_FILES);
     return EPUB_USER_STATE_FILES;
   }
-  if (FsHelpers::hasXtcExtension(path) || isTxtReaderPath(path)) {
+  if (FsHelpers::hasXtcExtension(path)) {
     count = std::size(PAGE_PROGRESS_FILES);
     return PAGE_PROGRESS_FILES;
+  }
+  if (isTxtReaderPath(path)) {
+    count = std::size(TXT_USER_STATE_FILES);
+    return TXT_USER_STATE_FILES;
   }
   count = 0;
   return nullptr;
