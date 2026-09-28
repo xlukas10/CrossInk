@@ -1,3 +1,24 @@
+> **This is an unofficial fork of [CrossInk](https://github.com/uxjulia/CrossInk)** that adds a speed reader and a much more capable TXT/Markdown reader. It is not affiliated with CrossInk or CrossPoint Reader; everything below the line comes from the original CrossInk README.
+
+## What this fork adds
+
+- **Speed reader** for EPUB, TXT, and Markdown books. It shows 1-10 words at a time in the middle of the screen for 0.1-10 seconds each. Groups end at paragraph ends, and EPUB books continue into the next chapter on their own.
+  - Next Page starts and pauses. Previous Page steps back one group; hold it to go back faster.
+  - Settings are remembered per book, including an optional Guide Dots switch, and the book menu shows ON/OFF next to it.
+- **Full TXT/Markdown reader menu**: Go to %, Auto Page Turn, Speed Reader, reader options (font, size, line spacing, margins, orientation, alignment, anti-aliasing, status bar, Guide Dots), Dark Mode, screenshot, reading stats, Mark Finished, and delete stats/cache.
+- **Reading stats for TXT/Markdown books**: reading time, reading pace, pages turned, and finished state, like EPUB and XTC books.
+- **Guide Dots on TXT/Markdown pages**, using the same dots as EPUB.
+
+See [Speed Reader](./docs/reader-features.md#speed-reader) and [TXT and Markdown Reader Menu](./docs/reader-features.md#txt-and-markdown-reader-menu) for details, and the [changelog](./CHANGELOG.md) for everything added so far.
+
+### Installing this fork
+
+Download the `firmware-*.bin` from [this fork's releases page](https://github.com/xlukas10/CrossInk/releases) and flash it as described in [Installation](./docs/installation.md). Only the Xteink X3/X4 build is published for now.
+
+On first open after installing, each EPUB lays out its chapters again once: the layout cache format changed.
+
+---
+
 > **This is a personal fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)** with a focus on improved fonts and minimal reading stats.
 
 ### Supported Devices
