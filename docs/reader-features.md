@@ -36,9 +36,9 @@ see [EPUB Indexing Methods](./epub-indexing.md) and
 ### TXT And Markdown Reader Menu
 
 TXT and Markdown (`.md`) books have their own, shorter reader menu with
-**Go to %**, **Auto Page Turn**, **Reader**, **Dark Mode**, **Take
-Screenshot**, **Reading Stats**, **Mark Finished**, **Delete Book Stats**,
-**Delete Book Cache**, and **Send to Nearby Device**.
+**Go to %**, **Auto Page Turn**, [**Speed Reader**](#speed-reader), **Reader**,
+**Dark Mode**, **Take Screenshot**, **Reading Stats**, **Mark Finished**,
+**Delete Book Stats**, **Delete Book Cache**, and **Send to Nearby Device**.
 
 **Reader** opens the reader options without the EPUB-only rows (word spacing,
 hyphenation, extra paragraph spacing, forced indents, embedded style, images,
@@ -186,6 +186,53 @@ Auto Page Turn can advance pages on a timer while reading.
 CrossInk adds a custom interval picker, so the interval is not limited to the built-in presets. The reader can also remember a different Auto Page Turn interval per book.
 
 Open the reader menu and select **Auto Page Turn** to configure it.
+
+## Speed Reader
+
+The speed reader shows the book a few words at a time in the middle of the
+screen, replacing them on a timer so your eyes stay in one place. It works in
+EPUB, TXT, and Markdown books. XTC and XTCH books are pre-rendered page images
+with no text to read, so they do not offer it.
+
+Open the reader menu and select **Speed Reader** (listed under **Auto Page
+Turn**; in the touch drawer it is on the **More** tab). The screen has three
+settings:
+
+- **Speed Reader**: On or Off. Turning it on starts at the first word of the
+  current page. Turning it off returns to normal reading on the page that holds
+  the last words shown.
+- **Words per Group**: how many words appear at once, from 1 to 10. A group
+  never runs past the end of a paragraph, so the last group of a paragraph can
+  be shorter. Groups that do not fit on one line wrap onto several centered
+  lines.
+- **Time per Group**: how long each group stays on screen, from 0.1 to 10
+  seconds. The last group of a paragraph stays 50% longer. Very short times are
+  limited by how fast the e-ink screen can redraw.
+
+While the speed reader is on:
+
+- **Next Page** (or a tap on the right side of the screen) starts and pauses.
+- **Previous Page** (or a tap on the left side) pauses and goes back one group.
+  Hold it to keep going back; it speeds up the longer you hold. In EPUB books it
+  goes back as far as the start of the current chapter.
+- **Confirm**, **Back**, and **Home** work as usual. The speed reader is always
+  paused when you come back from a menu.
+- It uses the book's reader font and size, keeps the status bar, and shows
+  **Paused** under the words while paused.
+- In EPUB books it skips images and tables, rejoins words split with a hyphen at
+  line ends, and continues into the next chapter on its own.
+- Auto Page Turn is hidden from the menu, because both advance the text on a
+  timer.
+
+The speed reader settings, including whether it is on, are remembered for each
+book; there is no global setting. A book left in speed reader mode reopens in
+it, paused, at the start of the page you were on. Speed-reading time counts as
+reading time and pages passed count as pages turned, the same way Auto Page
+Turn counts them. The device does not go to sleep while the speed reader is
+running.
+
+In TXT and Markdown books every line break ends a paragraph, so files that wrap
+their lines at a fixed width end a group at almost every line.
 
 ## Time Left
 
