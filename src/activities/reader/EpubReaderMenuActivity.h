@@ -107,6 +107,8 @@ class EpubReaderMenuActivity final : public Activity {
   int totalPages = 0;
   int bookProgressPercent = 0;
   bool autoPageTurnActive = false;
+  // Shown as ON/OFF next to Speed Reader, as in the TXT menu.
+  bool speedReaderActive = false;
   uint16_t autoPageTurnIntervalSeconds = 0;
   ReaderOptionsActivity::SaveSettingsCallback saveReaderSettingsCallback = nullptr;
   void* saveReaderSettingsContext = nullptr;

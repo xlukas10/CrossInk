@@ -42,7 +42,7 @@ TXT and Markdown (`.md`) books have their own, shorter reader menu with
 
 **Reader** opens the reader options without the EPUB-only rows (word spacing,
 hyphenation, extra paragraph spacing, forced indents, embedded style, images,
-publisher page numbers, Focus Reading, Guide Dots, and the dictionary). TXT
+publisher page numbers, Focus Reading, and the dictionary). TXT
 books have no per-book settings, so changes there update the global reader
 settings. Auto Page Turn in TXT books lasts until you stop it or leave the book.
 
@@ -163,7 +163,9 @@ provided by the book itself.
 
 Guide Dots adds small dots between words. The idea comes from speed-reading guidance where focusing on the space between words can help peripheral vision pick up more of the surrounding text.
 
-Toggle it from **Reader settings**.
+Toggle it from **Reader settings**. It works in EPUB, TXT, and Markdown books. TXT and Markdown books use the global setting, so turning it on from a TXT book also turns it on for EPUB books without their own reader settings; those books lay out their chapters again the next time they are opened.
+
+The [Speed Reader](#speed-reader) has its own Guide Dots switch, independent of this one.
 
 ## Force Paragraph Indents
 
@@ -195,8 +197,8 @@ EPUB, TXT, and Markdown books. XTC and XTCH books are pre-rendered page images
 with no text to read, so they do not offer it.
 
 Open the reader menu and select **Speed Reader** (listed under **Auto Page
-Turn**; in the touch drawer it is on the **More** tab). The screen has three
-settings:
+Turn**; in the touch drawer it is on the **More** tab). The menu shows **ON** or
+**OFF** next to it. The screen has four settings:
 
 - **Speed Reader**: On or Off. Turning it on starts at the first word of the
   current page. Turning it off returns to normal reading on the page that holds
@@ -208,6 +210,9 @@ settings:
 - **Time per Group**: how long each group stays on screen, from 0.1 to 10
   seconds. The last group of a paragraph stays 50% longer. Very short times are
   limited by how fast the e-ink screen can redraw.
+- **Guide Dots**: a small dot between the words of a group, like
+  [Guide Dots](#guide-dots) on the page. It is set separately from the page
+  setting, and a one-word group shows no dot.
 
 While the speed reader is on:
 

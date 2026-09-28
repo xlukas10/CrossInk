@@ -2193,6 +2193,9 @@ const char* EpubReaderTouchMenuActivity::rowValue(const RowId row, char* buffer,
     case RowId::AutoPageTurn:
       std::snprintf(buffer, bufferSize, "%us", autoPageTurnIntervalSeconds);
       return buffer;
+    case RowId::SpeedReader:
+      // ON/OFF next to the row, as in the TXT menu.
+      return speedReaderActive ? tr(STR_ON) : tr(STR_OFF);
     default:
       return nullptr;
   }

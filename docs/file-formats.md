@@ -136,7 +136,7 @@ if (parsedSize != fileSize) {
 
 ## `reader_settings.bin`
 
-### Version 10
+### Version 11
 
 Each EPUB cache directory may contain `reader_settings.bin`. Missing files mean
 the book uses global Reader settings, the default auto-page-turn interval, and
@@ -157,7 +157,8 @@ version 8 splits the screen margin into vertical and horizontal values. Version
 display setting. Version 10 appends the per-book speed reader state (on/off,
 words per group, and display interval). Speed reader values are meaningful only
 when flag bit 4 is set; otherwise the book uses the defaults (off, 1 word,
-0.3 s). Firmware that only knows version 9 ignores a version 10 file and falls
+0.3 s). Version 11 appends the speed reader Guide Dots switch (default off).
+Firmware that only knows version 9 ignores a version 10 or 11 file and falls
 back to global settings for that book.
 This lets the
 file preserve an auto-page-turn interval without forcing custom font/layout
@@ -170,7 +171,7 @@ fallback successfully opens a difficult book.
 
 ```c++
 struct ReaderSettingsBin {
-    u8 version; // 10
+    u8 version; // 11
     u8 flags;   // bit 0 = custom reader settings, bit 1 = custom auto-page-turn interval, bit 2 = render mode override, bit 3 = dictionary font override, bit 4 = speed reader settings
     u16 autoPageTurnSeconds;
     u8 renderMode; // 0 = CrossInk Default, 1 = Balanced, 2 = Light
@@ -200,27 +201,30 @@ struct ReaderSettingsBin {
     u8 speedReaderEnabled;      // version 10+; meaningful only when flag bit 4 is set
     u8 speedReaderWordsPerGroup; // 1-10
     u16 speedReaderIntervalTenths; // 1-100, tenths of a second each word group is shown
+    u8 speedReaderGuideDots;       // version 11+; 1 = dot between the words of a group
 };
 ```
 
 ## TXT `reader_settings.bin`
 
-### Version 1
+### Version 2
 
 TXT and Markdown cache directories (`txt_<hash>`) may contain their own, much
 smaller `reader_settings.bin` with per-book state. TXT books have no per-book
 font or layout overrides, so the file currently holds only the speed reader
 state. A missing file, an unknown version, or a truncated file means the book
-uses the speed reader defaults (off, 1 word, 0.3 s). The file is kept when the
-book cache is deleted or the book is re-uploaded.
+uses the speed reader defaults (off, 1 word, 0.3 s, no Guide Dots). The file is
+kept when the book cache is deleted or the book is re-uploaded. Version 1 had no
+`speedReaderGuideDots` byte and still loads.
 
 ```c++
 struct TxtReaderSettingsBin {
-    u8 version; // 1
+    u8 version; // 2
     u8 flags;   // bit 0 = speed reader settings
     u8 speedReaderEnabled;
     u8 speedReaderWordsPerGroup;   // 1-10
     u16 speedReaderIntervalTenths; // 1-100, tenths of a second
+    u8 speedReaderGuideDots;       // version 2+
 };
 ```
 

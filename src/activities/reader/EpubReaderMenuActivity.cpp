@@ -232,6 +232,7 @@ EpubReaderMenuActivity::EpubReaderMenuActivity(
 }
 
 void EpubReaderMenuActivity::setSpeedReaderActive(const bool active) {
+  speedReaderActive = active;
   if (!active) return;
   auto& mainItems = menuItems[MAIN_TAB_INDEX];
   mainItems.erase(std::remove_if(mainItems.begin(), mainItems.end(),
@@ -698,6 +699,8 @@ void EpubReaderMenuActivity::buildMenuScreen(UiApp::ScreenType& screen) {
     } else if (menuItem.action == MenuAction::AUTO_PAGE_TURN) {
       if (autoPageTurnActive) values[i] = std::to_string(autoPageTurnIntervalSeconds);
       item.value = values[i].empty() ? nullptr : values[i].c_str();
+    } else if (menuItem.action == MenuAction::SPEED_READER) {
+      item.value = I18N.get(speedReaderActive ? StrId::STR_ON : StrId::STR_OFF);
     }
     item.actionValue = static_cast<int16_t>(items.size());
     items.push_back(item);

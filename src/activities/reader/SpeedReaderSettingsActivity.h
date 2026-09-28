@@ -8,7 +8,7 @@
 #include "components/UiAppHost.h"
 #include "util/ButtonNavigator.h"
 
-// Book menu screen for the speed reader: On/Off, words per group and time per group.
+// Book menu screen for the speed reader: On/Off, words per group, time per group and Guide Dots.
 // Back returns the edited values as a SpeedReaderSettingsResult; the reader saves them for the
 // book and starts or stops speed reading.
 class SpeedReaderSettingsActivity final : public Activity {
@@ -25,7 +25,7 @@ class SpeedReaderSettingsActivity final : public Activity {
   bool allowGlobalHomeGesture() const override { return false; }
 
  private:
-  enum class Row { Enabled, WordsPerGroup, IntervalTenths, Count };
+  enum class Row { Enabled, WordsPerGroup, IntervalTenths, GuideDots, Count };
   static constexpr size_t kRowCount = static_cast<size_t>(Row::Count);
 
   using UiHost = UiAppHost<kRowCount, 2>;

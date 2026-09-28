@@ -4,12 +4,13 @@
 
 - TXT and Markdown books have a full reader menu: Go to %, Auto Page Turn, reader options (font, size, line spacing, margins, orientation, alignment, anti-aliasing, and status bar), Dark Mode, Take Screenshot, Reading Stats, Mark Finished, Delete Book Stats, and Delete Book Cache.
 - TXT and Markdown books now record reading stats, reading pace, and finished state like EPUB and XTC books.
-- Speed Reader for EPUB, TXT, and Markdown books shows 1-10 words at a time in the middle of the screen for 0.1-10 seconds each. Next Page starts and pauses, Previous Page steps back (hold to go faster), groups end at paragraph ends, and EPUB books continue into the next chapter. It is set per book from the reader menu under Auto Page Turn.
+- Speed Reader for EPUB, TXT, and Markdown books shows 1-10 words at a time in the middle of the screen for 0.1-10 seconds each. Next Page starts and pauses, Previous Page steps back (hold to go faster), groups end at paragraph ends, and EPUB books continue into the next chapter. It is set per book from the reader menu under Auto Page Turn, which shows ON or OFF next to it, and has its own Guide Dots switch.
+- Guide Dots now also work on TXT and Markdown pages, using the global Guide Dots setting in the TXT Reader options.
 
 ### Changed
 
 - EPUB chapters are laid out again once after updating, because the layout cache now records where paragraphs end (section cache version 78).
-- EPUB per-book reader settings (`reader_settings.bin`) move to version 10 to store the speed reader settings. Older firmware ignores version 10 files and uses the global reader settings for those books.
+- EPUB per-book reader settings (`reader_settings.bin`) move to version 11 to store the speed reader settings. Older firmware ignores version 11 files and uses the global reader settings for those books.
 
 ### Fixed
 

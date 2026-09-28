@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "fontIds.h"
+#include "util/GuideDotsText.h"
 
 namespace {
 // Holding Previous Page starts repeating after this delay, then speeds up in two stages.
@@ -210,8 +211,12 @@ uint32_t SpeedReaderController::currentIntervalMs() const {
 void SpeedReaderController::draw(GfxRenderer& renderer, const int fontId, const int left, const int top,
                                  const int width, const int height, const bool black) const {
   const char* text = groupText.data();
+  // Guide Dots put a middle dot in each gap between words on a line, never at a line end.
+  const char* separator = settings.guideDots ? GuideDotsText::SEPARATOR : " ";
+  const size_t separatorLength = std::strlen(separator);
   if (renderer.isSdCardFont(fontId)) {
     renderer.ensureSdCardFontReady(fontId, text, /*styleMask=*/0x01);
+    if (settings.guideDots) renderer.ensureSdCardFontReady(fontId, GuideDotsText::DOT_UTF8, /*styleMask=*/0x01);
   }
 
   std::array<WordSpan, SpeedReaderSettings::MAX_WORDS_PER_GROUP> words{};
@@ -233,7 +238,7 @@ void SpeedReaderController::draw(GfxRenderer& renderer, const int fontId, const 
   size_t used = 0;
   for (size_t w = 0; w < wordCount; ++w) {
     size_t candidate = used;
-    if (lineWords > 0) candidate = appendSpan(line, lineSize, candidate, " ", 1);
+    if (lineWords > 0) candidate = appendSpan(line, lineSize, candidate, separator, separatorLength);
     candidate = appendSpan(line, lineSize, candidate, text + words[w].start, words[w].length);
     if (lineWords > 0 && renderer.getTextWidth(fontId, line) > width) {
       lineStarts[lineCount++] = static_cast<uint8_t>(w - lineWords);
@@ -254,7 +259,7 @@ void SpeedReaderController::draw(GfxRenderer& renderer, const int fontId, const 
     used = 0;
     line[0] = '\0';
     for (size_t w = lineStarts[l]; w < lineStarts[l + 1]; ++w) {
-      if (w > lineStarts[l]) used = appendSpan(line, lineSize, used, " ", 1);
+      if (w > lineStarts[l]) used = appendSpan(line, lineSize, used, separator, separatorLength);
       used = appendSpan(line, lineSize, used, text + words[w].start, words[w].length);
     }
     const int x = left + (width - renderer.getTextWidth(fontId, line)) / 2;

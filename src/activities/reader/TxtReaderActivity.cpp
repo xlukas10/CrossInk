@@ -30,6 +30,7 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "util/BookCacheUtils.h"
+#include "util/GuideDotsText.h"
 #include "util/ScreenshotUtil.h"
 
 namespace {
@@ -40,13 +41,19 @@ constexpr unsigned long MIN_READING_STATS_PAGE_MS = 2000UL;
 constexpr uint16_t DEFAULT_AUTO_PAGE_TURN_SECONDS = 30;
 // Cache file magic and version
 constexpr uint32_t CACHE_MAGIC = 0x54585449;  // "TXTI"
-constexpr uint8_t CACHE_VERSION = 4;          // Increment when cache format changes
+constexpr uint8_t CACHE_VERSION = 5;          // Increment when cache format changes (5: Guide Dots byte)
 constexpr uint32_t MAX_CACHE_PAGES = 65535;   // Sanity cap to prevent unbounded reserve()
 
 // Parses and word-wraps lines from a file chunk into outLines.
 // Returns the number of bytes consumed from the start of buffer.
 size_t parseAndWrapLines(const uint8_t* buffer, size_t chunkSize, size_t fileOffset, size_t fileSize, int linesPerPage,
-                         GfxRenderer& renderer, int fontId, int vw, std::vector<std::string>& outLines) {
+                         GfxRenderer& renderer, int fontId, int vw, bool guideDots,
+                         std::vector<std::string>& outLines) {
+  // With Guide Dots every gap between words is drawn as " · ", so lines are measured that way too.
+  // The stored lines stay plain text; drawing adds the dots again.
+  const auto textWidth = [&](const std::string& text) {
+    return renderer.getTextWidth(fontId, guideDots ? GuideDotsText::withDots(text).c_str() : text.c_str());
+  };
   size_t pos = 0;
   while (pos < chunkSize && static_cast<int>(outLines.size()) < linesPerPage) {
     size_t lineEnd = pos;
@@ -66,14 +73,14 @@ size_t parseAndWrapLines(const uint8_t* buffer, size_t chunkSize, size_t fileOff
         break;
       }
 
-      if (renderer.getTextWidth(fontId, line.c_str()) <= vw) {
+      if (textWidth(line) <= vw) {
         outLines.push_back(line);
         lineBytePos = displayLen;
         line.clear();
         break;
       }
       size_t breakPos = line.length();
-      while (breakPos > 0 && renderer.getTextWidth(fontId, line.substr(0, breakPos).c_str()) > vw) {
+      while (breakPos > 0 && textWidth(line.substr(0, breakPos)) > vw) {
         size_t spacePos = line.rfind(' ', breakPos - 1);
         if (spacePos != std::string::npos && spacePos > 0) {
           breakPos = spacePos;
@@ -1071,6 +1078,7 @@ void TxtReaderActivity::initializeReader() {
   cachedVerticalMargin = SETTINGS.screenMarginVertical;
   cachedHorizontalMargin = SETTINGS.screenMarginHorizontal;
   cachedParagraphAlignment = SETTINGS.paragraphAlignment;
+  cachedGuideDots = SETTINGS.guideReadingEnabled != 0;
 
   // Calculate viewport dimensions
   renderer.getOrientedViewableTRBL(&cachedOrientedMarginTop, &cachedOrientedMarginRight, &cachedOrientedMarginBottom,
@@ -1172,10 +1180,11 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<std::string>
   // check while preserving the shared parseAndWrapLines() implementation.
   if (renderer.isSdCardFont(cachedFontId)) {
     renderer.ensureSdCardFontReady(cachedFontId, reinterpret_cast<const char*>(buffer), /*styleMask=*/0x01);
+    if (cachedGuideDots) renderer.ensureSdCardFontReady(cachedFontId, GuideDotsText::DOT_UTF8, /*styleMask=*/0x01);
   }
 
   size_t pos = parseAndWrapLines(buffer, chunkSize, offset, fileSize, linesPerPage, renderer, cachedFontId,
-                                 viewportWidth, outLines);
+                                 viewportWidth, cachedGuideDots, outLines);
   nextOffset = offset + pos;
   if (nextOffset > fileSize) {
     nextOffset = fileSize;
@@ -1242,8 +1251,10 @@ void TxtReaderActivity::renderPage() {
   // Render text lines with alignment
   auto renderLines = [&]() {
     int y = cachedOrientedMarginTop;
-    for (const auto& line : currentPageLines) {
-      if (!line.empty()) {
+    for (const auto& storedLine : currentPageLines) {
+      if (!storedLine.empty()) {
+        const std::string dottedLine = cachedGuideDots ? GuideDotsText::withDots(storedLine) : std::string();
+        const std::string& line = cachedGuideDots ? dottedLine : storedLine;
         int x = cachedOrientedMarginLeft;
         const bool lineIsRtl = BidiUtils::startsWithRtl(line.c_str(), BidiUtils::RTL_PARAGRAPH_PROBE_DEPTH);
         uint8_t effectiveAlignment = cachedParagraphAlignment;
@@ -1592,6 +1603,7 @@ bool TxtReaderActivity::loadPageIndexCache() {
   // - int32_t: font ID (to invalidate cache on font change)
   // - int32_t: vertical and horizontal screen margins (to invalidate cache on margin changes)
   // - uint8_t: paragraph alignment (to invalidate cache on alignment change)
+  // - uint8_t: Guide Dots on (dots widen word gaps, so they change line breaks)
   // - uint32_t: total pages count
   // - N * uint32_t: page offsets
 
@@ -1661,6 +1673,13 @@ bool TxtReaderActivity::loadPageIndexCache() {
     return false;
   }
 
+  uint8_t guideDots;
+  serialization::readPod(f, guideDots);
+  if ((guideDots != 0) != cachedGuideDots) {
+    LOG_DBG("TRS", "Cache Guide Dots mismatch, rebuilding");
+    return false;
+  }
+
   uint32_t numPages;
   serialization::readPod(f, numPages);
   if (numPages > MAX_CACHE_PAGES) {
@@ -1701,6 +1720,7 @@ void TxtReaderActivity::savePageIndexCache() const {
   serialization::writePod(f, static_cast<int32_t>(cachedVerticalMargin));
   serialization::writePod(f, static_cast<int32_t>(cachedHorizontalMargin));
   serialization::writePod(f, cachedParagraphAlignment);
+  serialization::writePod(f, static_cast<uint8_t>(cachedGuideDots ? 1 : 0));
   serialization::writePod(f, static_cast<uint32_t>(pageOffsets.size()));
 
   // Write page offsets
@@ -1739,6 +1759,7 @@ bool TxtReaderActivity::drawCurrentPageToBuffer(const std::string& filePath, Gfx
   const uint8_t verticalMargin = SETTINGS.screenMarginVertical;
   const uint8_t horizontalMargin = SETTINGS.screenMarginHorizontal;
   const uint8_t paragraphAlignment = SETTINGS.paragraphAlignment;
+  const bool guideDots = SETTINGS.guideReadingEnabled != 0;
 
   int marginTop, marginRight, marginBottom, marginLeft;
   renderer.getOrientedViewableTRBL(&marginTop, &marginRight, &marginBottom, &marginLeft);
@@ -1805,12 +1826,15 @@ bool TxtReaderActivity::drawCurrentPageToBuffer(const std::string& filePath, Gfx
       serialization::readPod(cacheFile, cachedHorizontalMargin);
       uint8_t cachedAlignment;
       serialization::readPod(cacheFile, cachedAlignment);
+      uint8_t cachedGuideDots;
+      serialization::readPod(cacheFile, cachedGuideDots);
       uint32_t numPages;
       serialization::readPod(cacheFile, numPages);
 
       if (magic == CACHE_MAGIC && version == CACHE_VERSION && cachedFileSize == txt.getFileSize() && cachedVw == vw &&
           cachedLpp == linesPerPage && cachedFontId == fontId && cachedVerticalMargin == verticalMargin &&
-          cachedHorizontalMargin == horizontalMargin && cachedAlignment == paragraphAlignment && numPages > 0 &&
+          cachedHorizontalMargin == horizontalMargin && cachedAlignment == paragraphAlignment &&
+          (cachedGuideDots != 0) == guideDots && numPages > 0 &&
           numPages <= MAX_CACHE_PAGES) {
         if (savedPage < 0 || savedPage >= static_cast<int>(numPages)) savedPage = 0;
         for (uint32_t i = 0; i < numPages; i++) {
@@ -1858,7 +1882,7 @@ bool TxtReaderActivity::drawCurrentPageToBuffer(const std::string& filePath, Gfx
   }
   buffer[chunkSize] = '\0';
 
-  parseAndWrapLines(buffer, chunkSize, offset, fileSize, linesPerPage, renderer, fontId, vw, pageLines);
+  parseAndWrapLines(buffer, chunkSize, offset, fileSize, linesPerPage, renderer, fontId, vw, guideDots, pageLines);
   free(buffer);
 
   if (pageLines.empty()) return false;
@@ -1866,8 +1890,9 @@ bool TxtReaderActivity::drawCurrentPageToBuffer(const std::string& filePath, Gfx
   // Render lines to frame buffer (no displayBuffer call)
   renderer.clearScreen(ReaderUtils::readerBackgroundColor());
   int y = marginTop;
-  for (const auto& line : pageLines) {
-    if (!line.empty()) {
+  for (const auto& storedLine : pageLines) {
+    if (!storedLine.empty()) {
+      const std::string line = guideDots ? GuideDotsText::withDots(storedLine) : storedLine;
       int x = marginLeft;
       switch (paragraphAlignment) {
         case CrossPointSettings::CENTER_ALIGN:

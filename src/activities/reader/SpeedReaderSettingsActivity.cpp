@@ -111,6 +111,10 @@ void SpeedReaderSettingsActivity::selectCurrent() {
     case Row::IntervalTenths:
       openIntervalPicker();
       break;
+    case Row::GuideDots:
+      settings.guideDots = !settings.guideDots;
+      requestUpdate();
+      break;
     case Row::Count:
       break;
   }
@@ -191,9 +195,10 @@ void SpeedReaderSettingsActivity::refreshListItems() {
   formatIntervalTenths(settings.intervalTenths, intervalValue.data(), intervalValue.size());
 
   const StrId labels[kRowCount] = {StrId::STR_SPEED_READER, StrId::STR_SPEED_READER_WORDS_PER_GROUP,
-                                   StrId::STR_SPEED_READER_INTERVAL};
+                                   StrId::STR_SPEED_READER_INTERVAL, StrId::STR_GUIDE_READING};
   const char* values[kRowCount] = {I18N.get(settings.enabled ? StrId::STR_ON : StrId::STR_OFF), wordsValue.data(),
-                                   intervalValue.data()};
+                                   intervalValue.data(),
+                                   I18N.get(settings.guideDots ? StrId::STR_ON : StrId::STR_OFF)};
   for (size_t index = 0; index < kRowCount; ++index) {
     listItems[index] = fui::ListItem{};
     listItems[index].label = I18N.get(labels[index]);

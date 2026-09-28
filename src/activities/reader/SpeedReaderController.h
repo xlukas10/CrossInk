@@ -40,6 +40,8 @@ class SpeedReaderController {
   // Longer words are cut at a UTF-8 boundary; nothing that long is readable at speed anyway.
   static constexpr size_t MAX_WORD_BYTES = 64;
   static constexpr size_t GROUP_TEXT_BYTES = SpeedReaderSettings::MAX_WORDS_PER_GROUP * MAX_WORD_BYTES + 1;
+  // A drawn line may hold the whole group with each single space widened to " · " (3 more bytes).
+  static constexpr size_t LINE_TEXT_BYTES = GROUP_TEXT_BYTES + (SpeedReaderSettings::MAX_WORDS_PER_GROUP - 1) * 3;
   // Group starts remembered for stepping back (2 KB). Older groups are rebuilt from an anchor.
   static constexpr size_t HISTORY_SIZE = 256;
 
@@ -96,7 +98,7 @@ class SpeedReaderController {
   // Scratch buffers kept off the task stacks: loadGroup() runs on the loop task, draw() on the
   // render task, so each has its own.
   std::array<char, GROUP_TEXT_BYTES> pendingText{};
-  mutable std::array<char, GROUP_TEXT_BYTES> lineText{};
+  mutable std::array<char, LINE_TEXT_BYTES> lineText{};
 
   std::array<uint64_t, HISTORY_SIZE> history{};
   size_t historyHead = 0;  // Next slot to write.

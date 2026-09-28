@@ -60,15 +60,15 @@ SettingInfo buildReaderRenderModeSetting() {
                           static_cast<uint8_t>(EpubRenderMode::Balanced), static_cast<uint8_t>(EpubRenderMode::Light)});
 }
 
-// The TXT reader lays out plain lines with the global font, spacing, margin, alignment and
-// orientation settings. These rows only change EPUB parsing or layout, so they would do nothing there.
+// The TXT reader lays out plain lines with the global font, spacing, margin, alignment,
+// orientation and Guide Dots settings. These rows only change EPUB parsing or layout, so they
+// would do nothing there.
 bool isEpubOnlyReaderSetting(const SettingInfo& setting) {
   switch (setting.nameId) {
     case StrId::STR_PUBLISHER_PAGE_NUMBERS:
     case StrId::STR_EMBEDDED_STYLE:
     case StrId::STR_IMAGES:
     case StrId::STR_FOCUS_READING:
-    case StrId::STR_GUIDE_READING:
     case StrId::STR_DICTIONARY:
     case StrId::STR_INDEXING_METHOD:
     case StrId::STR_WORD_SPACING:

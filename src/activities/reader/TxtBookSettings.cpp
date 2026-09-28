@@ -7,10 +7,14 @@
 
 namespace {
 constexpr char TXT_SETTINGS_FILE_NAME[] = "/reader_settings.bin";
-constexpr uint8_t TXT_SETTINGS_FILE_VERSION = 1;
+// Version 1 had no speed reader Guide Dots byte.
+constexpr uint8_t TXT_SETTINGS_FILE_VERSION_1 = 1;
+constexpr uint8_t TXT_SETTINGS_FILE_VERSION = 2;
 constexpr uint8_t TXT_SETTINGS_FLAG_SPEED_READER = 1 << 0;
 // version, flags, speed reader enabled, words per group, interval (u16 LE)
-constexpr size_t TXT_SETTINGS_FILE_SIZE = 6;
+constexpr size_t TXT_SETTINGS_FILE_V1_SIZE = 6;
+// ... plus speed reader Guide Dots
+constexpr size_t TXT_SETTINGS_FILE_SIZE = 7;
 }  // namespace
 
 TxtBookSettings TxtBookSettings::load(const std::string& cachePath) {
@@ -20,15 +24,22 @@ TxtBookSettings TxtBookSettings::load(const std::string& cachePath) {
     return settings;
   }
 
-  uint8_t data[TXT_SETTINGS_FILE_SIZE];
-  const bool complete = file.read(data, sizeof(data)) == static_cast<int>(sizeof(data));
+  uint8_t data[TXT_SETTINGS_FILE_SIZE] = {};
+  const int bytesRead = file.read(data, sizeof(data));
   file.close();
-  if (!complete) {
-    LOG_ERR("TBS", "TXT book settings file is truncated, using defaults");
+  if (bytesRead < 1) {
+    LOG_ERR("TBS", "TXT book settings file is empty, using defaults");
     return settings;
   }
-  if (data[0] != TXT_SETTINGS_FILE_VERSION) {
+  const size_t expectedSize = data[0] == TXT_SETTINGS_FILE_VERSION_1 ? TXT_SETTINGS_FILE_V1_SIZE
+                              : data[0] == TXT_SETTINGS_FILE_VERSION ? TXT_SETTINGS_FILE_SIZE
+                                                                     : 0;
+  if (expectedSize == 0) {
     LOG_DBG("TBS", "TXT book settings version %u unknown, using defaults", data[0]);
+    return settings;
+  }
+  if (bytesRead < static_cast<int>(expectedSize)) {
+    LOG_ERR("TBS", "TXT book settings file is truncated, using defaults");
     return settings;
   }
 
@@ -37,6 +48,7 @@ TxtBookSettings TxtBookSettings::load(const std::string& cachePath) {
     settings.speedReader.enabled = data[2] != 0;
     settings.speedReader.wordsPerGroup = data[3];
     settings.speedReader.intervalTenths = static_cast<uint16_t>(data[4] | (data[5] << 8));
+    settings.speedReader.guideDots = data[0] >= TXT_SETTINGS_FILE_VERSION && data[6] != 0;
     settings.speedReader.normalize();
   }
   return settings;
@@ -58,6 +70,7 @@ bool TxtBookSettings::save(const std::string& cachePath) const {
       normalized.wordsPerGroup,
       static_cast<uint8_t>(normalized.intervalTenths & 0xFF),
       static_cast<uint8_t>(normalized.intervalTenths >> 8),
+      static_cast<uint8_t>(normalized.guideDots ? 1 : 0),
   };
   const bool written = file.write(data, sizeof(data)) == sizeof(data);
   file.close();

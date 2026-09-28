@@ -17,6 +17,9 @@ struct SpeedReaderSettings {
   bool enabled = false;
   uint8_t wordsPerGroup = DEFAULT_WORDS_PER_GROUP;
   uint16_t intervalTenths = DEFAULT_INTERVAL_TENTHS;
+  // A middle dot between the words of a group. Separate from the page Guide Dots setting, so it
+  // can differ and toggling it never re-lays out an EPUB. A single-word group shows no dot.
+  bool guideDots = false;
 
   // Clamps values read from disk so a damaged or hand-edited file cannot stall or flood the reader.
   void normalize() {
