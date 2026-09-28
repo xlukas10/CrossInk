@@ -1307,8 +1307,17 @@ void TxtReaderActivity::renderSpeedReader() {
 
   renderer.clearScreen(ReaderUtils::readerBackgroundColor());
   const int viewportHeight = renderer.getScreenHeight() - cachedOrientedMarginTop - cachedOrientedMarginBottom;
-  speedReader->draw(renderer, cachedFontId, cachedOrientedMarginLeft, cachedOrientedMarginTop, viewportWidth,
-                    viewportHeight, ReaderUtils::readerForegroundBlack());
+  const auto drawGroup = [&]() {
+    speedReader->draw(renderer, cachedFontId, cachedOrientedMarginLeft, cachedOrientedMarginTop, viewportWidth,
+                      viewportHeight, ReaderUtils::readerForegroundBlack());
+  };
+  // Same two passes as renderPage(): the scan pass collects the group's characters so their SD-font
+  // glyph bitmaps are loaded before the real draw. Without it, glyphs not already cached from an
+  // earlier page draw as '?'.
+  auto scope = renderer.getFontCacheManager()->createPrewarmScope();
+  drawGroup();
+  scope.endScanAndPrewarm();
+  drawGroup();
   renderStatusBar();
   if (statusBarVisible) {
     GUI.drawTopStatusBarClock(renderer, UITheme::getInstance().getMetrics().topPadding, nullptr, true, 0,

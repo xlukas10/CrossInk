@@ -72,7 +72,8 @@ class SpeedReaderController {
   void onGroupDisplayed(unsigned long nowMs);
 
   // Draws the current group centered in the given area, wrapped onto several lines if needed,
-  // plus a small "Paused" or "End of book" label under it.
+  // plus a small "Paused" or "End of book" label under it. For SD-card fonts the caller wraps it
+  // in a FontCacheManager prewarm scope (scan pass, then real pass), as page rendering does.
   void draw(GfxRenderer& renderer, int fontId, int left, int top, int width, int height, bool black) const;
 
  private:
