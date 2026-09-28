@@ -297,7 +297,10 @@ void IntervalSelectionActivity::adjustValue(const int delta) {
 
 void IntervalSelectionActivity::drawStepHintLine(const int y, const StrId labelId, const int step) {
   char stepText[24];
-  if (valueFormatId != StrId::STR_NONE_OPT) {
+  // A formatter defines the value's unit (e.g. tenths of a second), so steps use it too.
+  if (valueFormatter != nullptr) {
+    valueFormatter(step, stepText, sizeof(stepText));
+  } else if (valueFormatId != StrId::STR_NONE_OPT) {
     snprintf(stepText, sizeof(stepText), I18N.get(valueFormatId), static_cast<unsigned int>(step));
   } else {
     snprintf(stepText, sizeof(stepText), "%d", step);

@@ -8,6 +8,7 @@
 #include <variant>
 
 #include "reader/EpubReaderMenuModel.h"
+#include "reader/SpeedReaderSettings.h"
 #include "util/FrontlightPanelModel.h"
 
 struct WifiResult {
@@ -124,11 +125,15 @@ struct ClippingJumpResult {
   bool settingsChanged = false;
 };
 
+struct SpeedReaderSettingsResult {
+  SpeedReaderSettings settings;
+};
+
 using ResultVariant =
     std::variant<std::monostate, WifiResult, KeyboardResult, MenuResult, ChapterResult, PercentResult, IntervalResult,
                  OptionSelectionResult, PageResult, NetworkModeResult, FootnoteResult, BookmarkResult,
                  FileBrowserActionResult, FilePathResult, WordResult, ReadingStatsResult, ClippingResult,
-                 DictionaryClippingRequest, ClippingJumpResult, FrontlightPanelResult>;
+                 DictionaryClippingRequest, ClippingJumpResult, FrontlightPanelResult, SpeedReaderSettingsResult>;
 
 struct ActivityResult {
   bool isCancelled = false;
