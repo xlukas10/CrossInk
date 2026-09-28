@@ -48,6 +48,7 @@ class ReaderOptionsActivity final : public Activity {
   void* dictionaryFontChangedContext = nullptr;
   bool settingsDirty = false;
   bool stablePageNumbersAvailable = false;
+  bool plainTextMode = false;
 
   using UiApp = freeink::ui::FreeInkApp<20, 4>;
   static constexpr freeink::ui::ActionId ACTION_ROW = 1;
@@ -111,6 +112,8 @@ class ReaderOptionsActivity final : public Activity {
                    sizeof(this->dictionaryFontFamilyName) - 1);
     }
   }
+  // Hides rows that only affect EPUB layout (for the TXT reader). Call before the activity starts.
+  void setPlainTextMode(const bool enabled) { plainTextMode = enabled; }
   void onEnter() override;
   void onExit() override;
   void loop() override;

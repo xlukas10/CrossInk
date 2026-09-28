@@ -50,6 +50,11 @@ constexpr size_t MAX_STATS_FILES_TO_PRESERVE = 8;
 constexpr char STATS_PREFIX[] = "stats";
 constexpr char STATS_SUFFIX[] = ".bin";
 
+// The TXT reader also opens Markdown files, so both share the txt_<hash> cache layout.
+bool isTxtReaderPath(const std::string& path) {
+  return FsHelpers::hasTxtExtension(path) || FsHelpers::hasMarkdownExtension(path);
+}
+
 std::string getBookCachePath(const std::string& path) {
   if (FsHelpers::hasEpubExtension(path)) {
     return Epub(path, "/.crosspoint").getCachePath();
@@ -57,7 +62,7 @@ std::string getBookCachePath(const std::string& path) {
   if (FsHelpers::hasXtcExtension(path)) {
     return Xtc(path, "/.crosspoint").getCachePath();
   }
-  if (FsHelpers::hasTxtExtension(path)) {
+  if (isTxtReaderPath(path)) {
     return Txt(path, "/.crosspoint").getCachePath();
   }
   return "";
@@ -68,7 +73,7 @@ const PreservedCacheFile* preservedFilesForPath(const std::string& path, size_t&
     count = std::size(EPUB_USER_STATE_FILES);
     return EPUB_USER_STATE_FILES;
   }
-  if (FsHelpers::hasXtcExtension(path) || FsHelpers::hasTxtExtension(path)) {
+  if (FsHelpers::hasXtcExtension(path) || isTxtReaderPath(path)) {
     count = std::size(PAGE_PROGRESS_FILES);
     return PAGE_PROGRESS_FILES;
   }
@@ -253,7 +258,7 @@ bool clearBookCacheForPath(const std::string& path) {
   if (FsHelpers::hasXtcExtension(path)) {
     return Xtc(path, "/.crosspoint").clearCache();
   }
-  if (FsHelpers::hasTxtExtension(path)) {
+  if (isTxtReaderPath(path)) {
     return Txt(path, "/.crosspoint").clearCache();
   }
   return false;

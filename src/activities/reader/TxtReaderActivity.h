@@ -4,8 +4,11 @@
 
 #include <vector>
 
+#include "BookReadingStats.h"
 #include "CrossPointSettings.h"
+#include "GlobalReadingStats.h"
 #include "ReaderProgressSaveDebouncer.h"
+#include "TxtReaderMenuActivity.h"
 #include "activities/Activity.h"
 #include "components/OptionPopup.h"
 #if CROSSINK_APP_CAP_TOUCH
@@ -27,7 +30,22 @@ class TxtReaderActivity final : public Activity {
   bool longPressBackHandled = false;
   bool longPressMenuHandled = false;
   bool skipRecentBookUpdateOnEntry = false;
+  // Set from the menu; the render task takes the screenshot after the next page is drawn.
+  bool pendingScreenshot = false;
   ReaderProgressSaveDebouncer progressSaveDebouncer;
+
+  // Reading stats, using the same session model as the XTC reader.
+  unsigned long pageShownAtMs = 0UL;
+  uint32_t sessionReadingSeconds = 0;
+  BookReadingStats stats;
+  GlobalReadingStats globalStats;
+  ReadingStatsDateTime sessionStartLocalDateTime;
+  bool hasSessionStartLocalDateTime = false;
+
+  // Auto page turn is session-only: it stops on exit and is not saved per book.
+  bool autoPageTurnActive = false;
+  uint16_t autoPageTurnSeconds = 0;
+  unsigned long lastAutoPageTurnMs = 0UL;
 #if CROSSINK_APP_CAP_TOUCH
   ReaderPinchGesture pinchFontGesture;
 #endif
@@ -72,7 +90,29 @@ class TxtReaderActivity final : public Activity {
   bool changeReaderFontSize(bool larger, FontSizeStepMode mode = FontSizeStepMode::Wrap);
   void cycleReaderFont();
   void rebuildTextLayout();
+  void resetTextLayout();
+  bool goToNextPage(bool recordPace);
+  void goToPreviousPage();
+  void stopAutoPageTurn();
+
+  void pauseReadingStatsTimer();
+  void resumeReadingStatsTimer();
+  bool currentPageReadingSecondsForStats(uint32_t& seconds) const;
+  bool forwardPageReadElapsed(uint32_t& seconds) const;
+  void recordCurrentPageReadingTime();
+  void recordForwardPageTurn(uint32_t seconds, bool recordPace);
+  void commitReadingStats();
+  void setBookCompleted(bool isCompleted);
+  float getCurrentBookProgressPercent() const;
+
   void openReaderMenu();
+  void onReaderMenuConfirm(TxtReaderMenuActivity::MenuAction action);
+  void openGoToPercent();
+  void openAutoPageTurnPicker();
+  void openReaderOptions();
+  void openReadingStats();
+  void deleteBookStats();
+  void deleteBookCache();
 #if CROSSINK_APP_CAP_TOUCH
   bool handlePinchFontResize();
   void resetPinchFontGesture();
@@ -96,6 +136,14 @@ class TxtReaderActivity final : public Activity {
     return true;
   }
   bool isReaderActivity() const override { return true; }
+  bool preventAutoSleep() override { return autoPageTurnActive; }
+  bool openReaderSettingsMenu() override {
+    if (!txt) {
+      return false;
+    }
+    openReaderMenu();
+    return true;
+  }
   bool usesFullScreenReaderVerticalSwipes() const override {
 #if defined(FREEINK_DEVICE_STICKY) && FREEINK_DEVICE_STICKY
     return true;
@@ -111,6 +159,9 @@ class TxtReaderActivity final : public Activity {
   std::string getCurrentBookPath() const override { return txt ? txt->getPath() : std::string{}; }
   std::string getCurrentBookTitle() const override { return txt ? txt->getTitle() : std::string{}; }
   bool getFrontlightPanelBookDetails(FrontlightPanelBookDetails& details) override;
+  std::unique_ptr<Activity> createFrontlightReadingStatsActivity() override;
+  void onFrontlightPanelOpened() override { pauseReadingStatsTimer(); }
+  void onFrontlightPanelClosed() override;
   bool handleFrontlightPanelResult(const FrontlightPanelResult& result) override;
 
   // Renders the last saved page to the frame buffer without flushing to display.

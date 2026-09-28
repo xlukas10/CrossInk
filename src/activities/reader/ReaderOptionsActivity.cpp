@@ -59,6 +59,31 @@ SettingInfo buildReaderRenderModeSetting() {
       .withEnumRawValues({static_cast<uint8_t>(EpubRenderMode::CrossInkDefault),
                           static_cast<uint8_t>(EpubRenderMode::Balanced), static_cast<uint8_t>(EpubRenderMode::Light)});
 }
+
+// The TXT reader lays out plain lines with the global font, spacing, margin, alignment and
+// orientation settings. These rows only change EPUB parsing or layout, so they would do nothing there.
+bool isEpubOnlyReaderSetting(const SettingInfo& setting) {
+  switch (setting.nameId) {
+    case StrId::STR_PUBLISHER_PAGE_NUMBERS:
+    case StrId::STR_EMBEDDED_STYLE:
+    case StrId::STR_IMAGES:
+    case StrId::STR_FOCUS_READING:
+    case StrId::STR_GUIDE_READING:
+    case StrId::STR_DICTIONARY:
+    case StrId::STR_INDEXING_METHOD:
+    case StrId::STR_WORD_SPACING:
+    case StrId::STR_HYPHENATION:
+    case StrId::STR_EXTRA_SPACING:
+    case StrId::STR_FORCE_PARAGRAPH_INDENTS:
+      return true;
+    default:
+      return false;
+  }
+}
+
+void removeEpubOnlyReaderSettings(std::vector<SettingInfo>& settings) {
+  settings.erase(std::remove_if(settings.begin(), settings.end(), isEpubOnlyReaderSetting), settings.end());
+}
 }  // namespace
 
 void ReaderOptionsActivity::onEnter() {
@@ -85,13 +110,15 @@ void ReaderOptionsActivity::rebuildSettingsList() {
   if (needsFonts) sdFontSystem.refreshIfDirty();
   const auto allSettings = getSettingsList(needsFonts ? &sdFontSystem.registry() : nullptr);
   settings = buildBookReaderSettingsParentList(allSettings);
-  const auto indexingMethod = std::find_if(settings.begin(), settings.end(), [](const SettingInfo& setting) {
-    return setting.nameId == StrId::STR_INDEXING_METHOD;
-  });
-  if (indexingMethod == settings.end()) {
-    settings.push_back(buildReaderRenderModeSetting());
-  } else {
-    settings.insert(indexingMethod, buildReaderRenderModeSetting());
+  if (!plainTextMode) {
+    const auto indexingMethod = std::find_if(settings.begin(), settings.end(), [](const SettingInfo& setting) {
+      return setting.nameId == StrId::STR_INDEXING_METHOD;
+    });
+    if (indexingMethod == settings.end()) {
+      settings.push_back(buildReaderRenderModeSetting());
+    } else {
+      settings.insert(indexingMethod, buildReaderRenderModeSetting());
+    }
   }
   fontSettings = buildReaderFontSettingsList(allSettings);
   pageLayoutSettings = buildReaderPageLayoutSettingsList(allSettings);
@@ -102,6 +129,15 @@ void ReaderOptionsActivity::rebuildSettingsList() {
                                              setting.nameId == StrId::STR_DOWNLOAD_FONTS;
                                     }),
                      fontSettings.end());
+
+  if (plainTextMode) {
+    removeEpubOnlyReaderSettings(settings);
+    removeEpubOnlyReaderSettings(fontSettings);
+    removeEpubOnlyReaderSettings(pageLayoutSettings);
+    setCurrentSettings();
+    selectedIndex = 0;
+    return;
+  }
 
   // Dictionary-specific font controls are useful only when an installed dictionary can use them.
   DictionaryRegistry installedDictionaryRegistry;

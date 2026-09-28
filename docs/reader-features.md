@@ -33,6 +33,19 @@ For books that are slow to index or fail because of complex publisher styling,
 see [EPUB Indexing Methods](./epub-indexing.md) and
 [EPUB Render Modes](./epub-render-modes.md).
 
+### TXT And Markdown Reader Menu
+
+TXT and Markdown (`.md`) books have their own, shorter reader menu with
+**Go to %**, **Auto Page Turn**, **Reader**, **Dark Mode**, **Take
+Screenshot**, **Reading Stats**, **Mark Finished**, **Delete Book Stats**,
+**Delete Book Cache**, and **Send to Nearby Device**.
+
+**Reader** opens the reader options without the EPUB-only rows (word spacing,
+hyphenation, extra paragraph spacing, forced indents, embedded style, images,
+publisher page numbers, Focus Reading, Guide Dots, and the dictionary). TXT
+books have no per-book settings, so changes there update the global reader
+settings. Auto Page Turn in TXT books lasts until you stop it or leave the book.
+
 ## Focus Reading
 
 Focus Reading is a reading aid that bolds the first portion of each word,

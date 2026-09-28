@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Added
+
+- TXT and Markdown books have a full reader menu: Go to %, Auto Page Turn, reader options (font, size, line spacing, margins, orientation, alignment, anti-aliasing, and status bar), Dark Mode, Take Screenshot, Reading Stats, Mark Finished, Delete Book Stats, and Delete Book Cache.
+- TXT and Markdown books now record reading stats, reading pace, and finished state like EPUB and XTC books.
+
+### Fixed
+
+- Delete Book Cache now works for Markdown (`.md`) books, and re-uploading a Markdown book clears its stale page index like it does for TXT books.
+
 ## [v1.6.0] - 2026-09-21
 
 ### Added

@@ -827,7 +827,7 @@ bool ActivityManager::openReaderSettingsForTouchscreenEscapeHatch() {
   }
 
   if (!currentActivity->openReaderSettingsMenu()) {
-    // TXT has no reader menu, so keep a reliable global Settings fallback.
+    // Keep a reliable global Settings fallback for readers without a menu to open.
     goToSettings();
   }
   return true;
