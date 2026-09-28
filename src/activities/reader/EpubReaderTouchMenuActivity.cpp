@@ -357,8 +357,9 @@ void EpubReaderTouchMenuActivity::onEnter() {
   Activity::onEnter();
   mappedInput.setReaderTouchscreenOverride(true);
 
-  const ReaderDrawerCatalog catalog = makeReaderDrawerCatalog(
-      {hasFootnotes, hasDictionary, hasBookmarks, hasClippings, showReadingPaceReset, stablePageCount > 0});
+  const ReaderDrawerCatalog catalog = makeReaderDrawerCatalog({hasFootnotes, hasDictionary, hasBookmarks, hasClippings,
+                                                               showReadingPaceReset, stablePageCount > 0,
+                                                               speedReaderActive});
   for (size_t tab = 0; tab < rootRows.size(); ++tab) {
     rootRows[tab].reserve(catalog[tab].count);
     rootRows[tab].assign(catalog[tab].items.begin(), catalog[tab].items.begin() + catalog[tab].count);
@@ -1263,6 +1264,9 @@ void EpubReaderTouchMenuActivity::activateRow(const RowId row) {
     case RowId::AutoPageTurn:
       openPane(ReaderDrawerPane::AutoPageTurn);
       return;
+    case RowId::SpeedReader:
+      closeAndReturn(false, EpubReaderMenuAction::SPEED_READER, false);
+      return;
     case RowId::BookDictionary:
       openPane(ReaderDrawerPane::Dictionary);
       return;
@@ -2128,6 +2132,8 @@ const char* EpubReaderTouchMenuActivity::rowLabel(const RowId row) const {
       return tr(STR_DELETE_BOOK_STATS);
     case RowId::AutoPageTurn:
       return tr(STR_AUTO_TURN_INTERVAL_SECONDS);
+    case RowId::SpeedReader:
+      return tr(STR_SPEED_READER);
     case RowId::FontFamily:
       return tr(STR_FONT_FAMILY);
     case RowId::FontSize:

@@ -91,6 +91,18 @@ bool SpeedReaderController::stepBack() {
   return true;
 }
 
+bool SpeedReaderController::continueAfterEnd(const bool resume) {
+  if (!source || !atEnd) return false;
+  const uint64_t previousStart = groupStart;
+  if (!loadGroup()) return false;
+  pushHistory(previousStart);
+  atEnd = false;
+  running = resume;
+  // The display time starts once the new group has been drawn.
+  groupShownAtMs.store(0);
+  return true;
+}
+
 bool SpeedReaderController::update(const unsigned long nowMs, const bool previousHeld, const unsigned long heldMs) {
   if (!source) return false;
 

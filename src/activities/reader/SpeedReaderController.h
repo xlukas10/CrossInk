@@ -64,6 +64,9 @@ class SpeedReaderController {
   void pause();
   // Previous Page press: pauses and steps back one group. Returns true when the group changed.
   bool stepBack();
+  // After the source ran out of words (isAtEnd) because more text was not ready yet, continue
+  // from where it stopped, keeping the step-back history. Returns true when a group was loaded.
+  bool continueAfterEnd(bool resume);
 
   // Call every loop. previousHeld/heldMs describe the Previous Page button so holding it keeps
   // stepping back, faster the longer it is held. Returns true when the screen needs redrawing.

@@ -57,6 +57,7 @@
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "SpeedReaderSettingsActivity.h"
 #include "SilentRestart.h"
 #include "WordRef.h"
 #include "activities/home/RecentBookProgress.h"
@@ -1457,7 +1458,8 @@ void EpubReaderActivity::pauseReadingPaceTimer(const char* reason) {
 }
 
 void EpubReaderActivity::resumeReadingPaceTimer(const char*) {
-  if (activeFootnotePreview) {
+  // A paused speed reader is not reading time; its timer restarts when it resumes.
+  if (activeFootnotePreview || (speedReaderWanted && (!speedReader || !speedReader->isRunning()))) {
     pageShownAtMs = 0UL;
     return;
   }
@@ -2276,6 +2278,10 @@ void EpubReaderActivity::onEnter() {
 
   initializeCompletionPromptTrigger();
 
+  // Speed reader mode is remembered per book; it resumes, paused, once the section is ready.
+  speedReaderWanted = initialBookReaderSettings.speedReader.enabled;
+  speedReaderRestartPending = speedReaderWanted;
+
   // Save current epub as last opened epub and add to recent books
   APP_STATE.openEpubPath = epub->getPath();
   APP_STATE.saveToFile();
@@ -2295,6 +2301,9 @@ void EpubReaderActivity::onExit() {
   sdFontSystem.setSettingsPersistenceCallback(nullptr, nullptr);
   clearPendingManualPageTurns(/*requestRecoveryRedraw=*/false);
   mappedInput.setReaderTouchscreenOverride(false);
+  // The word source refers to the section and holds one of its pages; release it first.
+  speedReader.reset();
+  speedReaderSource.reset();
 
   // The image callbacks hold the Epub as a raw context pointer.
   ImageBlock::setExtractor(nullptr, nullptr, nullptr);
@@ -2380,6 +2389,8 @@ void EpubReaderActivity::onExit() {
 
 void EpubReaderActivity::openReaderMenu() {
   clearPendingManualPageTurns();
+  // The speed reader always comes back from a menu paused.
+  if (speedReader) speedReader->pause();
   int currentPage = 0;
   int totalPages = 0;
   float bookProgress = 0.0f;
@@ -2417,7 +2428,7 @@ void EpubReaderActivity::openReaderMenu() {
   std::unique_ptr<Activity> menuActivity;
 #if CROSSINK_APP_CAP_TOUCH
   if (mappedInput.hasTouchHardware()) {
-    menuActivity = makeUniqueNoThrow<EpubReaderTouchMenuActivity>(
+    auto touchMenu = makeUniqueNoThrow<EpubReaderTouchMenuActivity>(
         renderer, mappedInput, epub, touchReaderPreviewModel.get(), bookProgress,
         !previewActive && !currentPageFootnotes.empty(),
         !previewActive && epub && Dictionary::exists(epub->getCachePath().c_str()), !BOOKMARKS.getBookmarks().empty(),
@@ -2429,6 +2440,8 @@ void EpubReaderActivity::openReaderMenu() {
         endGlobalSettingsEditForBookReader, this, bookSettings.dictionarySdFontFamilyName,
         bookSettings.dictionaryFontPointSize, bookSettings.hasDictionaryFontOverride, saveDictionaryFontForBookReader,
         this, touchReaderDrawerState);
+    if (touchMenu) touchMenu->setSpeedReaderActive(speedReaderWanted);
+    menuActivity = std::move(touchMenu);
     if (!menuActivity) {
       LOG_ERR("ERS", "Could not allocate touch reader menu");
       resumeReadingPaceTimer("reader_menu_oom");
@@ -2438,7 +2451,7 @@ void EpubReaderActivity::openReaderMenu() {
   }
 #endif
   if (!menuActivity) {
-    menuActivity = makeUniqueNoThrow<EpubReaderMenuActivity>(
+    auto buttonMenu = makeUniqueNoThrow<EpubReaderMenuActivity>(
         renderer, mappedInput, epub->getTitle(), currentPage, totalPages, bookProgressPercent, SETTINGS.orientation,
         !previewActive && !currentPageFootnotes.empty(),
         !previewActive && epub && Dictionary::exists(epub->getCachePath().c_str()), !BOOKMARKS.getBookmarks().empty(),
@@ -2450,6 +2463,8 @@ void EpubReaderActivity::openReaderMenu() {
         this, stableCurrentPage, stablePageCount, endGlobalSettingsEditForBookReader, this,
         bookSettings.dictionarySdFontFamilyName, bookSettings.dictionaryFontPointSize,
         bookSettings.hasDictionaryFontOverride, saveDictionaryFontForBookReader, this);
+    if (buttonMenu) buttonMenu->setSpeedReaderActive(speedReaderWanted);
+    menuActivity = std::move(buttonMenu);
     if (!menuActivity) {
       LOG_ERR("ERS", "Could not allocate reader menu");
       resumeReadingPaceTimer("reader_menu_oom");
@@ -2925,7 +2940,8 @@ void EpubReaderActivity::loop() {
   }
 
 #if CROSSINK_APP_CAP_TOUCH
-  if (!atEndOfBook && touch.tapped && handleTouchFootnoteLink(touch.x, touch.y)) {
+  // In speed reader mode the screen shows word groups, not the page's footnote links.
+  if (!atEndOfBook && !speedReaderWanted && touch.tapped && handleTouchFootnoteLink(touch.x, touch.y)) {
     return;
   }
 #endif
@@ -2961,7 +2977,7 @@ void EpubReaderActivity::loop() {
     openReaderMenu();
   }
 
-  if (!endOfBookMenuOpen && handleTouchDictionaryLookup()) {
+  if (!endOfBookMenuOpen && !speedReaderWanted && handleTouchDictionaryLookup()) {
     return;
   }
 
@@ -2994,6 +3010,13 @@ void EpubReaderActivity::loop() {
       return;
     }
     onGoHome();
+    return;
+  }
+
+  // In speed reader mode the page-turn buttons control the speed reader, and holding them
+  // steps back, so the long-press chapter/font/orientation actions below do not apply.
+  if (speedReaderWanted && !endOfBookMenuOpen) {
+    updateSpeedReader(touch.prev, touch.next);
     return;
   }
 
@@ -4107,6 +4130,9 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
     case EpubReaderMenuActivity::MenuAction::AUTO_PAGE_TURN:
       openAutoPageTurnIntervalPicker(false, returnToReaderMenu);
       break;
+    case EpubReaderMenuActivity::MenuAction::SPEED_READER:
+      openSpeedReaderSettings(returnToReaderMenu);
+      break;
     case EpubReaderMenuActivity::MenuAction::ROTATE_SCREEN:
     case EpubReaderMenuActivity::MenuAction::READER_OPTIONS:
     case EpubReaderMenuActivity::MenuAction::CONTROLS_OPTIONS:
@@ -4284,6 +4310,291 @@ void EpubReaderActivity::openAutoPageTurnIntervalPicker(const bool ignoreInitial
         else
           requestUpdate();
       });
+}
+
+void EpubReaderActivity::openSpeedReaderSettings(const bool returnToReaderMenu) {
+  (void)returnToReaderMenu;  // The settings screen returns to the reader, paused, like TXT.
+  SpeedReaderSettings current = initialBookReaderSettings.speedReader;
+  current.enabled = speedReaderWanted;
+  auto settingsScreen = makeUniqueNoThrow<SpeedReaderSettingsActivity>(renderer, mappedInput, current);
+  if (!settingsScreen) {
+    LOG_ERR("ERS", "OOM: speed reader settings");
+    resumeReadingPaceTimer("speed_reader_settings_oom");
+    requestUpdate();
+    return;
+  }
+  startActivityForResult(std::move(settingsScreen), [this](const ActivityResult& result) {
+    if (const auto* chosen = std::get_if<SpeedReaderSettingsResult>(&result.data)) {
+      saveSpeedReaderSettingsForBook(chosen->settings);
+      if (!chosen->settings.enabled) {
+        if (speedReaderWanted) disableSpeedReader();
+      } else if (!speedReaderWanted) {
+        enableSpeedReader();
+      } else if (speedReader && speedReader->isActive()) {
+        // New group size or timing: rebuild from the group on screen, paused.
+        RenderLock lock(*this);
+        speedReader->configure(initialBookReaderSettings.speedReader);
+        speedReader->start(*speedReaderSource, speedReader->currentGroupPosition());
+      }
+    }
+    resumeReadingPaceTimer("speed_reader_settings");
+    requestUpdate();
+  });
+}
+
+void EpubReaderActivity::saveSpeedReaderSettingsForBook(const SpeedReaderSettings& settings) {
+  initialBookReaderSettings.hasSpeedReaderSettings = true;
+  initialBookReaderSettings.speedReader = settings;
+  initialBookReaderSettings.speedReader.normalize();
+  if (!epub) return;
+  BookReaderSettingsData data = loadBookReaderSettingsFile(epub->getCachePath());
+  data.hasSpeedReaderSettings = true;
+  data.speedReader = initialBookReaderSettings.speedReader;
+  if (!saveBookReaderSettingsFile(epub->getCachePath(), data)) {
+    LOG_ERR("ERS", "Failed to save speed reader settings");
+  }
+}
+
+void EpubReaderActivity::enableSpeedReader() {
+  automaticPageTurnActive = false;
+  speedReaderWanted = true;
+  // render() creates the speed reader once the section is ready and starts it on this page.
+  speedReaderRestartPending = true;
+  speedReaderResumeAfterRestart = false;
+  pauseReadingPaceTimer("speed_reader_on");
+  requestUpdate();
+}
+
+void EpubReaderActivity::disableSpeedReader() {
+  {
+    RenderLock lock(*this);
+    // Leave the normal view on the page holding the last group that was shown.
+    syncSectionPageToSpeedReader();
+    speedReaderWanted = false;
+    speedReaderRestartPending = false;
+    speedReaderResumeAfterRestart = false;
+    speedReader.reset();
+    speedReaderSource.reset();
+  }
+  armReadingPaceWarmup("speed_reader_off");
+  resumeReadingPaceTimer("speed_reader_off");
+  requestUpdate();
+}
+
+void EpubReaderActivity::syncSectionPageToSpeedReader() {
+  if (!section || !speedReader || !speedReader->isActive()) return;
+  const uint64_t position = speedReader->currentGroupPosition();
+  const int page = EpubSpeedReaderSource::positionPage(position);
+  if (EpubSpeedReaderSource::positionSpine(position) == currentSpineIndex && page < section->pageCount) {
+    section->currentPage = page;
+  }
+}
+
+bool EpubReaderActivity::prepareSpeedReaderFrame() {
+  // Runs on the render task with the section built and currentPage valid.
+  if (!speedReaderWanted || activeFootnotePreview || !section || section->pageCount == 0) return false;
+
+  if (!speedReader || !speedReaderSource) {
+    speedReaderSource = makeUniqueNoThrow<EpubSpeedReaderSource>(section, currentSpineIndex);
+    speedReader = makeUniqueNoThrow<SpeedReaderController>();
+    if (!speedReaderSource || !speedReader) {
+      LOG_ERR("ERS", "OOM: speed reader (%u bytes); showing the page instead",
+              static_cast<unsigned>(sizeof(SpeedReaderController)));
+      speedReader.reset();
+      speedReaderSource.reset();
+      return false;
+    }
+    speedReaderRestartPending = true;
+  }
+
+  // A jump (chapter list, Go to %, bookmark, page-turn shortcut) or a chapter change moves the
+  // reader away from the group on screen; follow it by restarting at the reader's page.
+  bool moved = false;
+  if (speedReader->isActive()) {
+    const uint64_t position = speedReader->currentGroupPosition();
+    moved = EpubSpeedReaderSource::positionSpine(position) != currentSpineIndex ||
+            EpubSpeedReaderSource::positionPage(position) != section->currentPage;
+  }
+  if (speedReaderRestartPending || moved || !speedReader->isActive()) {
+    speedReaderRestartPending = false;
+    speedReaderSource->invalidate();
+    speedReader->configure(initialBookReaderSettings.speedReader);
+    const uint64_t start = EpubSpeedReaderSource::makePosition(static_cast<uint16_t>(currentSpineIndex),
+                                                               static_cast<uint16_t>(section->currentPage), 0, 0);
+    if (!speedReader->start(*speedReaderSource, start)) {
+      // No words from here to the end of the laid-out pages (e.g. an image-only chapter). The
+      // loop moves on to the next chapter or waits for more pages; show the page meanwhile.
+      return false;
+    }
+    speedReaderRenderedPage = -1;
+    speedReaderPageStartMs = millis();
+    if (speedReaderResumeAfterRestart) {
+      speedReaderResumeAfterRestart = false;
+      speedReader->togglePause(millis());
+      pageShownAtMs = millis();
+    }
+    // The first words may be on a later page than the one we started from.
+    syncSectionPageToSpeedReader();
+  }
+  return true;
+}
+
+bool EpubReaderActivity::renderSpeedReaderFrame(const int fontId, const int marginTop, const int marginRight,
+                                                const int marginBottom, const int marginLeft) {
+  const int width = renderer.getScreenWidth() - marginLeft - marginRight;
+  const int height = renderer.getScreenHeight() - marginTop - marginBottom;
+  const auto drawGroup = [&]() {
+    speedReader->draw(renderer, fontId, marginLeft, marginTop, width, height, ReaderUtils::readerForegroundBlack());
+  };
+
+  // Same prewarm as page rendering: the scan pass loads the SD-font glyphs of the group and the
+  // status-bar title before the real draw, otherwise uncached glyphs draw as replacements.
+  std::optional<FontCacheManager::PrewarmScope> scope;
+  if (auto* fcm = renderer.getFontCacheManager()) {
+    scope.emplace(*fcm, FontCacheManager::PreparationPolicy::Normal);
+    drawGroup();
+    renderStatusBar();
+    if (!scope->endScanAndPrewarm()) {
+      LOG_ERR("ERS", "Speed reader glyph prewarm failed (font=%d)", fontId);
+      return false;
+    }
+  }
+  drawGroup();
+  renderStatusBar();
+
+  // Word groups use fast refreshes; the periodic cleanup refresh counts pages, not groups, so
+  // the screen does not flash every few seconds at high speed.
+  if (section->currentPage != speedReaderRenderedPage || pagesUntilFullRefresh < 0) {
+    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+    speedReaderRenderedPage = section->currentPage;
+  } else {
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  }
+  speedReader->onGroupDisplayed(millis());
+  return true;
+}
+
+void EpubReaderActivity::updateSpeedReader(const bool touchPrev, const bool touchNext) {
+  const auto pageTurn = ReaderUtils::detectPageTurn(mappedInput);
+  // Buttons step back on press, so holding them can repeat; the release is then ignored.
+  const bool buttonPrevPressed = mappedInput.wasPressed(MappedInputManager::Button::Left) ||
+                                 mappedInput.wasPressed(MappedInputManager::Button::PageBack);
+  const bool prevHeld = mappedInput.isPressed(MappedInputManager::Button::Left) ||
+                        mappedInput.isPressed(MappedInputManager::Button::PageBack);
+  if (pageTurn.next || touchNext) speedReaderPendingToggle = !speedReaderPendingToggle;
+  if ((buttonPrevPressed || touchPrev || (pageTurn.fromTilt && pageTurn.prev)) && speedReaderPendingSteps < UINT8_MAX) {
+    speedReaderPendingSteps++;
+  }
+
+  // Input that arrives mid-draw waits here, so the group never changes under the render task.
+  if (RenderLock::peek()) return;
+  RenderLock lock(*this);
+
+  if (!speedReader || !speedReader->isActive()) {
+    // Not started yet, or render() found no words from the reader's page on.
+    if (speedReaderSource && section) {
+      const auto stall = speedReaderSource->stall();
+      if (stall == EpubSpeedReaderSource::Stall::ChapterEnd) {
+        handleSpeedReaderStall();
+      } else if (stall == EpubSpeedReaderSource::Stall::WaitingForPages &&
+                 section->pageCount > EpubSpeedReaderSource::positionPage(speedReaderSource->tell())) {
+        // The page it stopped at has been laid out since; render() retries the start.
+        requestUpdate();
+      }
+    }
+    return;
+  }
+
+  const unsigned long now = millis();
+  const bool wasRunning = speedReader->isRunning();
+  const int pageBefore = section ? section->currentPage : 0;
+  bool changed = false;
+  if (speedReaderPendingToggle) {
+    speedReaderPendingToggle = false;
+    speedReader->togglePause(now);
+    changed = true;
+  }
+  for (; speedReaderPendingSteps > 0; speedReaderPendingSteps--) {
+    // Stepping back pauses, so redraw even at the chapter start to show the Paused label.
+    speedReader->stepBack();
+    changed = true;
+  }
+  if (speedReader->update(now, prevHeld, prevHeld ? mappedInput.getHeldTime() : 0)) {
+    changed = true;
+    // Each timed group while running is reading time, so idle-threshold checks see short spans.
+    if (wasRunning && speedReader->isRunning()) {
+      recordCurrentPageReadingTime("speed_reader");
+      pageShownAtMs = now;
+    }
+  }
+
+  if (speedReader->isAtEnd()) {
+    // Out of words: more pages still to lay out, the chapter ended, or the book ended.
+    if (wasRunning) speedReaderResumeAfterRestart = true;
+    handleSpeedReaderStall();
+  }
+
+  if (wasRunning != speedReader->isRunning()) {
+    if (speedReader->isRunning()) {
+      pageShownAtMs = now;
+      speedReaderPageStartMs = now;
+    } else if (!speedReaderResumeAfterRestart) {
+      pauseReadingPaceTimer("speed_reader_pause");
+    }
+  }
+  if (!changed) return;
+
+  syncSectionPageToSpeedReader();
+  // Like auto page turn: every page passed counts as a page turned, and the time spent on it is a
+  // reading-pace sample (skipped after a pause by the pace warm-up).
+  if (wasRunning && section && section->currentPage > pageBefore) {
+    const uint32_t pageSeconds = static_cast<uint32_t>((now - speedReaderPageStartMs) / 1000UL);
+    if (speedReaderPageStartMs != 0 && SETTINGS.shouldTrackReadingStats()) {
+      recordForwardPagePaceSample(pageSeconds, "speed_reader");
+    }
+    const int pagesPassed = section->currentPage - pageBefore;
+    stats.totalPagesTurned += pagesPassed;
+    globalStats.totalPagesTurned += pagesPassed;
+    speedReaderPageStartMs = now;
+  }
+  requestUpdate();
+}
+
+void EpubReaderActivity::handleSpeedReaderStall() {
+  // Called from updateSpeedReader() with the RenderLock held.
+  if (!speedReaderSource || !section) return;
+  switch (speedReaderSource->stall()) {
+    case EpubSpeedReaderSource::Stall::WaitingForPages:
+      // The loop's background build lays out pages ahead of the reader; retry once it has.
+      if (speedReader && speedReader->isAtEnd() && speedReader->continueAfterEnd(speedReaderResumeAfterRestart)) {
+        speedReaderResumeAfterRestart = false;
+        requestUpdate();
+      }
+      return;
+    case EpubSpeedReaderSource::Stall::ChapterEnd:
+      if (currentSpineIndex + 1 < epub->getSpineItemsCount()) {
+        // Move on to the next chapter; render() builds it and restarts the speed reader there,
+        // resuming if it was running.
+        if (speedReaderResumeAfterRestart) {
+          stats.totalPagesTurned++;
+          globalStats.totalPagesTurned++;
+        }
+        nextPageNumber = 0;
+        currentSpineIndex++;
+        speedReaderSource->invalidate();
+        section.reset();
+        speedReaderRestartPending = true;
+        armReadingPaceWarmup("speed_reader_chapter");
+        requestUpdate();
+      } else {
+        // End of the book: stay paused on the last group with its End of book label.
+        speedReaderResumeAfterRestart = false;
+        pauseReadingPaceTimer("speed_reader_end");
+      }
+      return;
+    case EpubSpeedReaderSource::Stall::None:
+      return;
+  }
 }
 
 void EpubReaderActivity::startClipSelection(const DictionaryClippingRequest* dictionaryRequest,
@@ -6268,7 +6579,22 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     return;
   }
 
-  {
+  if (prepareSpeedReaderFrame()) {
+    const int renderFontId = activeSectionFontId != 0 ? activeSectionFontId : SETTINGS.getReaderFontId();
+    currentPageFootnotes.clear();
+#if CROSSINK_APP_CAP_TOUCH
+    currentPageFootnoteTouchTargets.fill({});
+#endif
+    if (!renderSpeedReaderFrame(renderFontId, layout.marginTop, layout.marginRight, layout.marginBottom,
+                                layout.marginLeft)) {
+      renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+      GUI.drawPopup(renderer, tr(STR_MEMORY_ERROR));
+      renderer.displayBuffer();
+      showPendingSyncSaveError();
+      return;
+    }
+    lastRenderCompleteMs = millis();
+  } else {
     // Unified page read: the in-progress build's in-RAM table if it has reached the page,
     // otherwise the on-disk file (finalized section, or a partial from a previous session).
     auto p = section->loadPage(section->currentPage);
@@ -6825,6 +7151,9 @@ void EpubReaderActivity::cacheCurrentSectionPosition() {
 }
 
 void EpubReaderActivity::prepareCurrentSectionForRelayout() {
+  // Page and word positions from the old layout do not carry over; restart from the page the
+  // reader repositions to.
+  if (speedReaderWanted) speedReaderRestartPending = true;
   if (!section) return;
   cacheCurrentSectionPosition();
 }

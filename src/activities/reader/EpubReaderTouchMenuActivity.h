@@ -40,6 +40,8 @@ class EpubReaderTouchMenuActivity final : public Activity {
       ReaderOptionsActivity::DictionaryFontChangedCallback dictionaryFontChangedCallback,
       void* dictionaryFontChangedContext, ReaderDrawerState initialState = {});
 
+  // While the speed reader is on the drawer hides Auto Page Turn. Call before the drawer opens.
+  void setSpeedReaderActive(const bool active) { speedReaderActive = active; }
   void onEnter() override;
   void onExit() override;
   void loop() override;
@@ -103,6 +105,7 @@ class EpubReaderTouchMenuActivity final : public Activity {
   bool buttonFocusActive = false;
   bool automaticPageTurnActive = false;
   uint16_t autoPageTurnIntervalSeconds = READER_AUTO_PAGE_TURN_MIN_SECONDS;
+  bool speedReaderActive = false;
 
   ReaderDrawerState state{};
   ReaderSettingsDraft draft{};

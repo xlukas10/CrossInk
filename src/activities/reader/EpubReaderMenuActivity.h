@@ -40,6 +40,9 @@ class EpubReaderMenuActivity final : public Activity {
       ReaderOptionsActivity::DictionaryFontChangedCallback dictionaryFontChangedCallback = nullptr,
       void* dictionaryFontChangedContext = nullptr);
 
+  // Auto page turn and the speed reader both advance the text on a timer, so while the speed
+  // reader is on Auto Page Turn is hidden. Call before the menu opens.
+  void setSpeedReaderActive(bool active);
   void onEnter() override;
   void onExit() override;
   void loop() override;

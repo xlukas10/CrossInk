@@ -231,6 +231,14 @@ EpubReaderMenuActivity::EpubReaderMenuActivity(
   }
 }
 
+void EpubReaderMenuActivity::setSpeedReaderActive(const bool active) {
+  if (!active) return;
+  auto& mainItems = menuItems[MAIN_TAB_INDEX];
+  mainItems.erase(std::remove_if(mainItems.begin(), mainItems.end(),
+                                 [](const MenuItem& item) { return item.action == MenuAction::AUTO_PAGE_TURN; }),
+                  mainItems.end());
+}
+
 EpubReaderMenuActivity::TabMenuItems EpubReaderMenuActivity::buildMenuItems(
     bool hasFootnotes, bool hasBookmarks, bool hasClippings, bool isCurrentPageBookmarked, bool isBookCompleted,
     bool showReadingPaceReset, bool hasDictionary, bool hasStablePageNumbers) {
@@ -256,6 +264,7 @@ EpubReaderMenuActivity::TabMenuItems EpubReaderMenuActivity::buildMenuItems(
     mainItems.push_back({MenuAction::GO_TO_STABLE_PAGE, StrId::STR_GO_TO_STABLE_PAGE});
   }
   mainItems.push_back({MenuAction::AUTO_PAGE_TURN, StrId::STR_AUTO_TURN_INTERVAL_SECONDS});
+  mainItems.push_back({MenuAction::SPEED_READER, StrId::STR_SPEED_READER});
   mainItems.push_back({MenuAction::READING_STATS, StrId::STR_READING_STATS});
   mainItems.push_back({MenuAction::READER_OPTIONS, StrId::STR_READER_OPTIONS});
   bookmarkItems.push_back({MenuAction::SAVE_CLIPPING, StrId::STR_SAVE_CLIPPING});

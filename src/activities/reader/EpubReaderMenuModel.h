@@ -33,6 +33,8 @@ enum class EpubReaderMenuAction : uint8_t {
   LOOKUP_HISTORY,
   SET_BOOK_DICTIONARY,
   STATUS_BAR_SETTINGS,
+  // Appended so the numeric values of existing actions stay unchanged.
+  SPEED_READER,
 };
 
 enum class ReaderDrawerTab : uint8_t { Font = 0, Layout = 1, More = 2, Location = 3, Settings = 4, Count };
@@ -99,6 +101,7 @@ enum class ReaderDrawerCatalogItem : uint8_t {
   FontSize,
   DictionaryFontFamily,
   DictionaryFontSize,
+  SpeedReader,
 };
 
 struct ReaderDrawerAvailability {
@@ -108,6 +111,8 @@ struct ReaderDrawerAvailability {
   bool hasClippings = false;
   bool showReadingPaceReset = false;
   bool hasStablePageNumbers = false;
+  // Auto page turn and the speed reader both advance the text on a timer; only one can run.
+  bool speedReaderActive = false;
 };
 
 struct ReaderDrawerTabCatalog {
@@ -148,7 +153,8 @@ constexpr ReaderDrawerCatalog makeReaderDrawerCatalog(const ReaderDrawerAvailabi
   more.add(ReaderDrawerCatalogItem::SelectChapter);
   more.add(ReaderDrawerCatalogItem::GoToPercent);
   if (available.hasStablePageNumbers) more.add(ReaderDrawerCatalogItem::GoToStablePage);
-  more.add(ReaderDrawerCatalogItem::AutoPageTurn);
+  if (!available.speedReaderActive) more.add(ReaderDrawerCatalogItem::AutoPageTurn);
+  more.add(ReaderDrawerCatalogItem::SpeedReader);
   if (available.hasFootnotes) more.add(ReaderDrawerCatalogItem::Footnotes);
 
   auto& location = catalog[static_cast<size_t>(ReaderDrawerTab::Location)];

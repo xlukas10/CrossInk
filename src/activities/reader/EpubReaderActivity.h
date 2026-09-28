@@ -19,6 +19,8 @@
 #include "GlobalReadingStats.h"
 #include "ManualPageTurnQueue.h"
 #include "ReaderProgressSaveDebouncer.h"
+#include "EpubSpeedReaderSource.h"
+#include "SpeedReaderController.h"
 #include "SpeedReaderSettings.h"
 #include "activities/Activity.h"
 #include "components/OptionPopup.h"
@@ -198,6 +200,24 @@ class EpubReaderActivity final : public Activity {
   bool pendingScreenshot = false;
   bool pendingSyncSaveError = false;
   bool automaticPageTurnActive = false;
+
+  // Speed reader. speedReaderWanted is the per-book mode; the source and controller exist only
+  // while it is on. The render task reads them, so they are created, restarted and destroyed
+  // under RenderLock, and the loop only drives them while no render is running.
+  bool speedReaderWanted = false;
+  std::unique_ptr<EpubSpeedReaderSource> speedReaderSource;
+  std::unique_ptr<SpeedReaderController> speedReader;
+  // Set when the section was (re)built and the speed reader must restart at the current page:
+  // on entry, after a chapter change, a relayout, or a jump. Consumed by render().
+  bool speedReaderRestartPending = false;
+  // Resume playback after that restart (it was running when it reached the chapter end).
+  bool speedReaderResumeAfterRestart = false;
+  // Page-turn input that arrived while a group was being drawn, applied on the next idle loop.
+  bool speedReaderPendingToggle = false;
+  uint8_t speedReaderPendingSteps = 0;
+  int speedReaderRenderedPage = -1;
+  // When the speed reader entered the current page, for the per-page reading pace sample.
+  unsigned long speedReaderPageStartMs = 0UL;
   // Session-only display toggle. Layout continues to reserve the same status
   // lane, so switching it never changes the EPUB's page breaks.
   bool statusBarVisible = true;
@@ -398,6 +418,16 @@ class EpubReaderActivity final : public Activity {
   void resetCurrentBookStatsAfterDelete();
   void openFileTransfer();
   void openAutoPageTurnIntervalPicker(bool ignoreInitialConfirmRelease = false, bool returnToReaderMenu = false);
+  void openSpeedReaderSettings(bool returnToReaderMenu);
+  void saveSpeedReaderSettingsForBook(const SpeedReaderSettings& settings);
+  void enableSpeedReader();
+  void disableSpeedReader();
+  // Called by render() with the section ready; returns false if the normal page should be drawn.
+  bool prepareSpeedReaderFrame();
+  bool renderSpeedReaderFrame(int fontId, int marginTop, int marginRight, int marginBottom, int marginLeft);
+  void updateSpeedReader(bool touchPrev, bool touchNext);
+  void handleSpeedReaderStall();
+  void syncSectionPageToSpeedReader();
   void startClipSelection(const DictionaryClippingRequest* dictionaryRequest = nullptr,
                           bool ignoreInitialBackRelease = false);
   void resetReadingPaceData();
@@ -496,7 +526,10 @@ class EpubReaderActivity final : public Activity {
     cleanImageBasePending = true;
     return true;
   }
-  bool preventAutoSleep() override { return automaticPageTurnActive; }
+  bool preventAutoSleep() override {
+    return automaticPageTurnActive || (speedReader && speedReader->isRunning()) ||
+           (speedReaderWanted && speedReaderResumeAfterRestart);
+  }
   // Hold the loop hot only while the build has work this loop would do: a kept-alive
   // build sitting outside the lookahead window is dormant, and reporting it here would
   // pin the CPU at full clock (no power saving, yield-only loop) for the whole read.
