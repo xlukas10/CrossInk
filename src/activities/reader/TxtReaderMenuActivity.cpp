@@ -26,18 +26,24 @@ constexpr fui::ActionId kActionRow = 1;
 }  // namespace
 
 TxtReaderMenuActivity::TxtReaderMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string title,
-                                             const bool isBookCompleted)
+                                             const bool isBookCompleted, const bool speedReaderEnabled)
     : Activity("TxtReaderMenu", renderer, mappedInput),
       title(std::move(title)),
-      items(buildMenuItems(isBookCompleted, mappedInput.hasTouchHardware())),
+      speedReaderEnabled(speedReaderEnabled),
+      items(buildMenuItems(isBookCompleted, speedReaderEnabled, mappedInput.hasTouchHardware())),
       ui(renderer) {}
 
 std::vector<TxtReaderMenuActivity::MenuItem> TxtReaderMenuActivity::buildMenuItems(const bool isBookCompleted,
+                                                                                   const bool speedReaderEnabled,
                                                                                    const bool hasTouch) {
   std::vector<MenuItem> menuItems;
   menuItems.reserve(kMaxMenuItems);
   menuItems.push_back({MenuAction::GO_TO_PERCENT, StrId::STR_GO_TO_PERCENT});
-  menuItems.push_back({MenuAction::AUTO_PAGE_TURN, StrId::STR_AUTO_TURN_INTERVAL_SECONDS});
+  // Auto page turn and the speed reader both advance the text on a timer; only one can run.
+  if (!speedReaderEnabled) {
+    menuItems.push_back({MenuAction::AUTO_PAGE_TURN, StrId::STR_AUTO_TURN_INTERVAL_SECONDS});
+  }
+  menuItems.push_back({MenuAction::SPEED_READER, StrId::STR_SPEED_READER});
   // TXT books have no per-book overrides, so this edits the global reader settings.
   menuItems.push_back({MenuAction::READER_OPTIONS, StrId::STR_CAT_READER});
   menuItems.push_back({MenuAction::TOGGLE_DARK_MODE, StrId::STR_READER_DARK_MODE});
@@ -183,6 +189,8 @@ void TxtReaderMenuActivity::refreshListItems() {
       listItems[index].value = I18N.get(SETTINGS.disableReaderTouchscreen ? StrId::STR_ON : StrId::STR_OFF);
     } else if (items[index].action == MenuAction::TOGGLE_DARK_MODE) {
       listItems[index].value = I18N.get(SETTINGS.screenInverted ? StrId::STR_ON : StrId::STR_OFF);
+    } else if (items[index].action == MenuAction::SPEED_READER) {
+      listItems[index].value = I18N.get(speedReaderEnabled ? StrId::STR_ON : StrId::STR_OFF);
     }
   }
 }

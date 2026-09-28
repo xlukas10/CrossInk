@@ -8,7 +8,10 @@
 #include "CrossPointSettings.h"
 #include "GlobalReadingStats.h"
 #include "ReaderProgressSaveDebouncer.h"
+#include "SpeedReaderController.h"
+#include "TxtBookSettings.h"
 #include "TxtReaderMenuActivity.h"
+#include "TxtSpeedReaderSource.h"
 #include "activities/Activity.h"
 #include "components/OptionPopup.h"
 #if CROSSINK_APP_CAP_TOUCH
@@ -46,6 +49,20 @@ class TxtReaderActivity final : public Activity {
   bool autoPageTurnActive = false;
   uint16_t autoPageTurnSeconds = 0;
   unsigned long lastAutoPageTurnMs = 0UL;
+
+  // Per-book settings (speed reader). The speed reader objects exist only while it is on, so a
+  // normal reading session carries no extra RAM. The render task reads them, so they are
+  // created and destroyed under RenderLock.
+  TxtBookSettings bookSettings;
+  std::unique_ptr<TxtSpeedReaderSource> speedReaderSource;
+  std::unique_ptr<SpeedReaderController> speedReader;
+  // The book was left in speed reader mode; start it once the page index is ready.
+  bool pendingSpeedReaderStart = false;
+  // Page-turn input that arrived while a group was being drawn, applied on the next idle loop.
+  bool speedReaderPendingToggle = false;
+  uint8_t speedReaderPendingSteps = 0;
+  // Page shown by the last speed reader render; a new page takes the periodic full-refresh count.
+  int speedReaderRenderedPage = -1;
 #if CROSSINK_APP_CAP_TOUCH
   ReaderPinchGesture pinchFontGesture;
 #endif
@@ -113,6 +130,14 @@ class TxtReaderActivity final : public Activity {
   void openReadingStats();
   void deleteBookStats();
   void deleteBookCache();
+
+  void openSpeedReaderSettings();
+  bool startSpeedReader();
+  void stopSpeedReader();
+  void updateSpeedReader(bool touchPrev, bool touchNext);
+  void syncPageToSpeedReader();
+  void renderSpeedReader();
+  int pageForOffset(size_t offset) const;
 #if CROSSINK_APP_CAP_TOUCH
   bool handlePinchFontResize();
   void resetPinchFontGesture();
@@ -136,7 +161,7 @@ class TxtReaderActivity final : public Activity {
     return true;
   }
   bool isReaderActivity() const override { return true; }
-  bool preventAutoSleep() override { return autoPageTurnActive; }
+  bool preventAutoSleep() override { return autoPageTurnActive || (speedReader && speedReader->isRunning()); }
   bool openReaderSettingsMenu() override {
     if (!txt) {
       return false;
@@ -160,7 +185,10 @@ class TxtReaderActivity final : public Activity {
   std::string getCurrentBookTitle() const override { return txt ? txt->getTitle() : std::string{}; }
   bool getFrontlightPanelBookDetails(FrontlightPanelBookDetails& details) override;
   std::unique_ptr<Activity> createFrontlightReadingStatsActivity() override;
-  void onFrontlightPanelOpened() override { pauseReadingStatsTimer(); }
+  void onFrontlightPanelOpened() override {
+    if (speedReader) speedReader->pause();
+    pauseReadingStatsTimer();
+  }
   void onFrontlightPanelClosed() override;
   bool handleFrontlightPanelResult(const FrontlightPanelResult& result) override;
 

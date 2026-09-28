@@ -23,6 +23,7 @@
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "SpeedReaderSettingsActivity.h"
 #include "activities/boot_sleep/SleepCoverAssets.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/IntervalSelectionActivity.h"
@@ -162,6 +163,10 @@ void TxtReaderActivity::onEnter() {
   hasSessionStartLocalDateTime = getCurrentLocalReadingStatsDateTime(sessionStartLocalDateTime);
   autoPageTurnSeconds = DEFAULT_AUTO_PAGE_TURN_SECONDS;
 
+  bookSettings = TxtBookSettings::load(txt->getCachePath());
+  // Speed reader mode is remembered per book; it resumes, paused, once the page index exists.
+  pendingSpeedReaderStart = bookSettings.speedReader.enabled;
+
   // Trigger first update
   requestUpdate();
 }
@@ -182,6 +187,9 @@ void TxtReaderActivity::onExit() {
   // Reset orientation back to portrait for the rest of the UI
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
 
+  // The word source refers to txt and pageOffsets, so it goes first.
+  speedReader.reset();
+  speedReaderSource.reset();
   pageOffsets.clear();
   currentPageLines.clear();
   APP_STATE.readerActivityLoadCount = 0;
@@ -191,12 +199,15 @@ void TxtReaderActivity::onExit() {
 
 void TxtReaderActivity::openReaderMenu() {
   if (!txt) return;
-  auto menu = makeUniqueNoThrow<TxtReaderMenuActivity>(renderer, mappedInput, txt->getTitle(), stats.isCompleted);
+  auto menu = makeUniqueNoThrow<TxtReaderMenuActivity>(renderer, mappedInput, txt->getTitle(), stats.isCompleted,
+                                                       speedReader != nullptr);
   if (!menu) {
     LOG_ERR("TRS", "OOM: TXT reader menu");
     return;
   }
   stopAutoPageTurn();
+  // The speed reader always comes back from a menu paused.
+  if (speedReader) speedReader->pause();
   pauseReadingStatsTimer();
   startActivityForResult(std::move(menu), [this](const ActivityResult& result) {
     const auto* menuResult = std::get_if<MenuResult>(&result.data);
@@ -216,6 +227,9 @@ void TxtReaderActivity::onReaderMenuConfirm(const TxtReaderMenuActivity::MenuAct
       return;
     case TxtReaderMenuActivity::MenuAction::AUTO_PAGE_TURN:
       openAutoPageTurnPicker();
+      return;
+    case TxtReaderMenuActivity::MenuAction::SPEED_READER:
+      openSpeedReaderSettings();
       return;
     case TxtReaderMenuActivity::MenuAction::READER_OPTIONS:
       openReaderOptions();
@@ -266,6 +280,11 @@ void TxtReaderActivity::openGoToPercent() {
       // Inverse of currentPercent above, so reopening the picker shows the same value.
       const int targetPage = static_cast<int>(percent->percent * totalPages / 100.0f);
       currentPage = std::clamp(targetPage, 0, totalPages - 1);
+      if (speedReader) {
+        // Continue speed reading from the start of the chosen page.
+        RenderLock lock(*this);
+        speedReader->start(*speedReaderSource, pageOffsets[currentPage]);
+      }
     }
     resumeReadingStatsTimer();
     requestUpdate();
@@ -400,6 +419,155 @@ void TxtReaderActivity::deleteBookCache() {
   });
 }
 
+void TxtReaderActivity::openSpeedReaderSettings() {
+  SpeedReaderSettings current = bookSettings.speedReader;
+  current.enabled = speedReader != nullptr;
+  auto settingsScreen = makeUniqueNoThrow<SpeedReaderSettingsActivity>(renderer, mappedInput, current);
+  if (!settingsScreen) {
+    LOG_ERR("TRS", "OOM: speed reader settings");
+    resumeReadingStatsTimer();
+    requestUpdate();
+    return;
+  }
+  startActivityForResult(std::move(settingsScreen), [this](const ActivityResult& result) {
+    if (const auto* chosen = std::get_if<SpeedReaderSettingsResult>(&result.data); chosen && txt) {
+      bookSettings.hasSpeedReaderSettings = true;
+      bookSettings.speedReader = chosen->settings;
+      if (!bookSettings.save(txt->getCachePath())) {
+        LOG_ERR("TRS", "Failed to save speed reader settings");
+      }
+
+      if (!chosen->settings.enabled) {
+        if (speedReader) stopSpeedReader();
+      } else if (!speedReader) {
+        if (!startSpeedReader()) {
+          // Nothing to read from here (e.g. an empty file): record that it is off again.
+          bookSettings.speedReader.enabled = false;
+          bookSettings.save(txt->getCachePath());
+        }
+      } else {
+        // New group size or timing: rebuild from the group on screen, paused.
+        RenderLock lock(*this);
+        speedReader->configure(bookSettings.speedReader);
+        speedReader->start(*speedReaderSource, speedReader->currentGroupPosition());
+      }
+    }
+    resumeReadingStatsTimer();
+    requestUpdate();
+  });
+}
+
+bool TxtReaderActivity::startSpeedReader() {
+  if (!txt || pageOffsets.empty()) return false;
+  stopAutoPageTurn();
+
+  auto source = makeUniqueNoThrow<TxtSpeedReaderSource>(*txt, pageOffsets);
+  auto controller = makeUniqueNoThrow<SpeedReaderController>();
+  if (!source || !controller) {
+    LOG_ERR("TRS", "OOM: speed reader (%u bytes)", static_cast<unsigned>(sizeof(SpeedReaderController)));
+    drawToast(renderer, tr(STR_MEMORY_ERROR));
+    delay(1000);
+    return false;
+  }
+  controller->configure(bookSettings.speedReader);
+  const int page = std::clamp(currentPage, 0, static_cast<int>(pageOffsets.size()) - 1);
+  if (!controller->start(*source, pageOffsets[page])) {
+    LOG_DBG("TRS", "Speed reader found no words from page %d", page);
+    return false;
+  }
+
+  {
+    RenderLock lock(*this);
+    speedReaderSource = std::move(source);
+    speedReader = std::move(controller);
+    speedReaderPendingToggle = false;
+    speedReaderPendingSteps = 0;
+    speedReaderRenderedPage = -1;
+  }
+  // It starts paused, and a paused speed reader does not count as reading time.
+  pauseReadingStatsTimer();
+  requestUpdate();
+  return true;
+}
+
+void TxtReaderActivity::stopSpeedReader() {
+  {
+    RenderLock lock(*this);
+    // Leave the normal view on the page holding the last group that was shown.
+    syncPageToSpeedReader();
+    speedReader.reset();
+    speedReaderSource.reset();
+  }
+  resumeReadingStatsTimer();
+  requestUpdate();
+}
+
+void TxtReaderActivity::updateSpeedReader(const bool touchPrev, const bool touchNext) {
+  const auto pageTurn = ReaderUtils::detectPageTurn(mappedInput);
+  // Buttons step back on press, so holding them can repeat; the release is then ignored.
+  const bool buttonPrevPressed = mappedInput.wasPressed(MappedInputManager::Button::Left) ||
+                                 mappedInput.wasPressed(MappedInputManager::Button::PageBack);
+  const bool prevHeld = mappedInput.isPressed(MappedInputManager::Button::Left) ||
+                        mappedInput.isPressed(MappedInputManager::Button::PageBack);
+  if (pageTurn.next || touchNext) speedReaderPendingToggle = !speedReaderPendingToggle;
+  if ((buttonPrevPressed || touchPrev || (pageTurn.fromTilt && pageTurn.prev)) && speedReaderPendingSteps < UINT8_MAX) {
+    speedReaderPendingSteps++;
+  }
+
+  // Input that arrives mid-draw waits here, so the group never changes under the render task.
+  if (RenderLock::peek()) return;
+
+  const unsigned long now = millis();
+  const bool wasRunning = speedReader->isRunning();
+  const int pageBefore = currentPage;
+  bool changed = false;
+  if (speedReaderPendingToggle) {
+    speedReaderPendingToggle = false;
+    speedReader->togglePause(now);
+    changed = true;
+  }
+  for (; speedReaderPendingSteps > 0; speedReaderPendingSteps--) {
+    // Stepping back pauses, so redraw even at the start of the book to show the Paused label.
+    speedReader->stepBack();
+    changed = true;
+  }
+  if (speedReader->update(now, prevHeld, prevHeld ? mappedInput.getHeldTime() : 0)) {
+    changed = true;
+    // Each timed group while running is reading time, so idle-threshold checks see short spans.
+    if (wasRunning && speedReader->isRunning()) {
+      recordCurrentPageReadingTime();
+      pageShownAtMs = now;
+    }
+  }
+
+  if (wasRunning != speedReader->isRunning()) {
+    if (speedReader->isRunning()) {
+      pageShownAtMs = now;
+    } else {
+      pauseReadingStatsTimer();
+    }
+  }
+  if (!changed) return;
+
+  syncPageToSpeedReader();
+  // Like auto page turn: pages passed count as pages turned, but not as reading pace.
+  for (int page = pageBefore; page < currentPage && speedReader->isRunning(); ++page) {
+    recordForwardPageTurn(0, /*recordPace=*/false);
+  }
+  requestUpdate();
+}
+
+void TxtReaderActivity::syncPageToSpeedReader() {
+  if (speedReader && !pageOffsets.empty()) {
+    currentPage = pageForOffset(static_cast<size_t>(speedReader->currentGroupPosition()));
+  }
+}
+
+int TxtReaderActivity::pageForOffset(const size_t offset) const {
+  const auto it = std::upper_bound(pageOffsets.begin(), pageOffsets.end(), offset);
+  return it == pageOffsets.begin() ? 0 : static_cast<int>(it - pageOffsets.begin()) - 1;
+}
+
 bool TxtReaderActivity::handleFrontlightPanelResult(const FrontlightPanelResult& result) {
   if (result.action != FrontlightPanelAction::SendNearbyBook || !txt) return false;
   saveProgress(currentPage);
@@ -419,6 +587,12 @@ void TxtReaderActivity::loop() {
       requestUpdate();
     }
     return;
+  }
+
+  // The page index is built by the first render; the speed reader starts from it.
+  if (pendingSpeedReaderStart && initialized && !RenderLock::peek()) {
+    pendingSpeedReaderStart = false;
+    startSpeedReader();
   }
 
   if (autoPageTurnActive) {
@@ -490,6 +664,13 @@ void TxtReaderActivity::loop() {
   if (!touch.prev && !touch.next && mappedInput.wasReleased(MappedInputManager::Button::Back) &&
       mappedInput.getHeldTime() < ReaderUtils::GO_HOME_MS) {
     onGoHome();
+    return;
+  }
+
+  // In speed reader mode the page-turn buttons control the speed reader, and holding them
+  // steps back, so the long-press font/orientation actions below do not apply.
+  if (speedReader) {
+    updateSpeedReader(touch.prev, touch.next);
     return;
   }
 
@@ -750,7 +931,11 @@ bool TxtReaderActivity::supportsQuickAction(const CrossPointSettings::SHORT_PWRB
 bool TxtReaderActivity::executeReaderShortcutAction(const CrossPointSettings::SHORT_PWRBTN action) {
   switch (action) {
     case CrossPointSettings::SHORT_PWRBTN::PREVIOUS_PAGE:
-      goToPreviousPage();
+      if (speedReader) {
+        speedReaderPendingSteps++;
+      } else {
+        goToPreviousPage();
+      }
       return true;
     case CrossPointSettings::SHORT_PWRBTN::TOGGLE_FONT:
       cycleReaderFont();
@@ -1026,15 +1211,19 @@ void TxtReaderActivity::render(RenderLock&&) {
   if (currentPage < 0) currentPage = 0;
   if (currentPage >= totalPages) currentPage = totalPages - 1;
 
-  // Load current page content
-  size_t offset = pageOffsets[currentPage];
-  size_t nextOffset;
-  currentPageLines.clear();
-  loadPageAtOffset(offset, currentPageLines, nextOffset);
+  if (speedReader) {
+    renderSpeedReader();
+  } else {
+    // Load current page content
+    size_t offset = pageOffsets[currentPage];
+    size_t nextOffset;
+    currentPageLines.clear();
+    loadPageAtOffset(offset, currentPageLines, nextOffset);
 
-  renderer.clearScreen(ReaderUtils::readerBackgroundColor());
-  renderPage();
-  pageShownAtMs = millis();
+    renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+    renderPage();
+    pageShownAtMs = millis();
+  }
 
   if (!queueProgressSave()) {
     LOG_ERR("TRS", "Failed to save debounced reader progress");
@@ -1112,6 +1301,31 @@ void TxtReaderActivity::renderPage() {
   // scope destructor clears font cache via FontCacheManager
 }
 
+void TxtReaderActivity::renderSpeedReader() {
+  // A relayout (font, margins, orientation) rebuilds the page index; follow the group into it.
+  syncPageToSpeedReader();
+
+  renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+  const int viewportHeight = renderer.getScreenHeight() - cachedOrientedMarginTop - cachedOrientedMarginBottom;
+  speedReader->draw(renderer, cachedFontId, cachedOrientedMarginLeft, cachedOrientedMarginTop, viewportWidth,
+                    viewportHeight, ReaderUtils::readerForegroundBlack());
+  renderStatusBar();
+  if (statusBarVisible) {
+    GUI.drawTopStatusBarClock(renderer, UITheme::getInstance().getMetrics().topPadding, nullptr, true, 0,
+                              ReaderUtils::readerDarkModeEnabled());
+  }
+
+  // Word groups use fast refreshes; the periodic cleanup refresh counts pages, not groups,
+  // so the screen does not flash every few seconds at high speed.
+  if (currentPage != speedReaderRenderedPage || pagesUntilFullRefresh < 0) {
+    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+    speedReaderRenderedPage = currentPage;
+  } else {
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  }
+  speedReader->onGroupDisplayed(millis());
+}
+
 void TxtReaderActivity::renderStatusBar() const {
   if (!statusBarVisible) {
     return;
@@ -1187,7 +1401,11 @@ void TxtReaderActivity::pauseReadingStatsTimer() {
   pageShownAtMs = 0UL;
 }
 
-void TxtReaderActivity::resumeReadingStatsTimer() { pageShownAtMs = txt && totalPages > 0 ? millis() : 0UL; }
+void TxtReaderActivity::resumeReadingStatsTimer() {
+  // A paused speed reader is not reading time; its timer restarts when it resumes.
+  const bool speedReaderPaused = speedReader && !speedReader->isRunning();
+  pageShownAtMs = txt && totalPages > 0 && !speedReaderPaused ? millis() : 0UL;
+}
 
 bool TxtReaderActivity::currentPageReadingSecondsForStats(uint32_t& seconds) const {
   seconds = 0;

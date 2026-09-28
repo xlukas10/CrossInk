@@ -16,6 +16,7 @@ class TxtReaderMenuActivity final : public Activity {
   enum class MenuAction {
     GO_TO_PERCENT,
     AUTO_PAGE_TURN,
+    SPEED_READER,
     READER_OPTIONS,
     TOGGLE_DARK_MODE,
     SCREENSHOT,
@@ -28,7 +29,7 @@ class TxtReaderMenuActivity final : public Activity {
   };
 
   TxtReaderMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string title,
-                        bool isBookCompleted);
+                        bool isBookCompleted, bool speedReaderEnabled);
 
   void onEnter() override;
   void onExit() override;
@@ -42,18 +43,19 @@ class TxtReaderMenuActivity final : public Activity {
   // One interaction per visible row; sized so every item fits even when the whole list is on screen.
   using UiHost = UiAppHost<12, 2>;
   using UiApp = UiHost::App;
-  static constexpr size_t kMaxMenuItems = 11;
+  static constexpr size_t kMaxMenuItems = 12;
 
   struct MenuItem {
     MenuAction action;
     StrId labelId;
   };
 
-  static std::vector<MenuItem> buildMenuItems(bool isBookCompleted, bool hasTouch);
+  static std::vector<MenuItem> buildMenuItems(bool isBookCompleted, bool speedReaderEnabled, bool hasTouch);
   void finishCancelled();
 
   ButtonNavigator buttonNavigator;
   std::string title;
+  bool speedReaderEnabled = false;
   std::vector<MenuItem> items;
   std::array<freeink::ui::ListItem, kMaxMenuItems> listItems{};
   int selectedIndex = 0;
