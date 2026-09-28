@@ -414,7 +414,8 @@ bool TextBlock::serialize(HalFile& file) const {
          serialization::tryWritePod(file, blockStyle.textIndent) &&
          serialization::tryWritePod(file, blockStyle.textIndentDefined) &&
          serialization::tryWritePod(file, blockStyle.isRtl) &&
-         serialization::tryWritePod(file, blockStyle.directionDefined);
+         serialization::tryWritePod(file, blockStyle.directionDefined) &&
+         serialization::tryWritePod(file, static_cast<uint8_t>(paragraphEnd ? 1 : 0));
 }
 
 std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
@@ -524,6 +525,13 @@ std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
     LOG_ERR("TXB", "Deserialization failed: truncated block style metadata");
     return nullptr;
   }
+
+  uint8_t endsParagraph = 0;
+  if (!serialization::tryReadPod(file, endsParagraph) || endsParagraph > 1) {
+    LOG_ERR("TXB", "Deserialization failed: invalid paragraph end flag");
+    return nullptr;
+  }
+  block->paragraphEnd = endsParagraph != 0;
 
   return block;
 }

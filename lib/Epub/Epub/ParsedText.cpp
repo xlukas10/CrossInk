@@ -1896,6 +1896,9 @@ bool ParsedText::extractLine(Arena& scratchArena, const size_t breakIndex, const
     LOG_ERR("PTX", "Dropping line: TextBlock arena allocation failed");
     return false;
   }
+  // The last break index is only extracted when the whole paragraph is being laid out
+  // (includeLastLine); a partial flush keeps that line's words for the next pass.
+  block->setEndsParagraph(isLastLine);
   processLine(std::move(block), lineVisibleOffset, lineReferenceOffset);
   return true;
 }

@@ -332,6 +332,15 @@ Binary layout:
 
 ## `section.bin`
 
+### Version 78
+
+Version 78 appends one byte to every serialized `TextBlock`, after its
+`BlockStyle`: `endsParagraph` (`0` or `1`). It is `1` on the last line of a
+laid-out paragraph, including lines ended by `<br>` or another block break, and
+lets the speed reader end word groups at paragraph ends. Page rendering ignores
+it. Complete files use byte `78`; suspended partials use the previously unused
+sentinel `0xF2`. Older full and partial layouts rebuild automatically.
+
 ### Version 77
 
 Version 77 keeps the serialized layout unchanged. It was bumped because ordered
@@ -455,7 +464,7 @@ import std.mem;
 import std.string;
 import std.core;
 
-#define EXPECTED_VERSION 77
+#define EXPECTED_VERSION 78
 #define MAX_STRING_LENGTH 65535
 #define FOOTNOTE_NUMBER_LEN 32
 #define FOOTNOTE_HREF_LEN 96
@@ -542,6 +551,7 @@ struct TextBlock {
     }
 
     BlockStyle blockStyle;
+    u8 endsParagraph [[comment("Version 78+: 1 on the last line of a paragraph")]];
 };
 
 struct ImageBlock {

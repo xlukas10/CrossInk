@@ -22,6 +22,9 @@ class TextBlock final : public Block {
   bool guideDotsPresent = false;
   bool wordFlagsPresent = false;
   bool wordSpacesPresent = false;
+  // Set on the final line of a laid-out paragraph (also a <br> or other block break). The
+  // speed reader ends its word groups here; page rendering ignores it.
+  bool paragraphEnd = false;
   bool isValid = true;
   std::unique_ptr<uint8_t[]> arena;
 
@@ -83,6 +86,8 @@ class TextBlock final : public Block {
     return static_cast<uint8_t>((wordFlags(i) & WORD_FLAG_LINK_ID_MASK) >> WORD_FLAG_LINK_ID_SHIFT);
   }
   bool wordEndsWithInsertedHyphen(const uint16_t i) const { return (wordFlags(i) & WORD_FLAG_INSERTED_HYPHEN) != 0; }
+  void setEndsParagraph(const bool endsParagraph) { paragraphEnd = endsParagraph; }
+  bool endsParagraph() const { return paragraphEnd; }
   bool hasRuby() const;
   int getRubyShift(int ascender) const { return hasRuby() ? (ascender / 2) : 0; }
   const std::vector<std::string>& getRubyTexts() const { return rubyTexts; }
